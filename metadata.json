@@ -1,0 +1,5 @@
+{
+  "name": "SentinelNav",
+  "description": "A robust, self-hosted style navigation dashboard with real-time connectivity monitoring, admin management, and security features.",
+  "requestFramePermissions": []
+}
