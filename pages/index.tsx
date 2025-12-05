@@ -25,14 +25,12 @@ export default function Home() {
   useEffect(() => {
     checkSession();
 
-    const sites = getWebsites();
-    setWebsites(sites);
+    // const sites = getWebsites();
+    // setWebsites(sites);
+    // Moved to fetchWebsites()
 
-    sites.forEach(site => {
-      if (site.status === 'unknown') {
-        checkSingleSite(site.id, sites);
-      }
-    });
+    // Initial check moved to fetchWebsites logic
+    // sites.forEach(site => { ... });
 
     const interval = setInterval(() => {
       checkAllSites();
@@ -57,13 +55,34 @@ export default function Home() {
     }
   };
 
+  // ... (auth useEffects remain)
+
+  // Load sites from API on mount
   useEffect(() => {
-    if (websites.length > 0) {
-      saveWebsites(websites);
+    fetchWebsites();
+  }, []);
+
+  const fetchWebsites = async () => {
+    try {
+      const res = await fetch('/api/sites');
+      if (res.ok) {
+        const data = await res.json();
+        setWebsites(data);
+
+        // Trigger check for unknown status sites?
+        data.forEach((site: Website) => {
+          if (site.status === 'unknown') {
+            checkSingleSite(site.id, data);
+          }
+        });
+      }
+    } catch (error) {
+      console.error('Failed to fetch websites', error);
     }
-  }, [websites]);
+  };
 
   const checkSingleSite = async (id: string, currentList = websites) => {
+    // Optimistic update locally
     const updatedList = currentList.map(site =>
       site.id === id ? { ...site, status: 'checking' as const } : site
     );
@@ -80,9 +99,18 @@ export default function Home() {
       });
       const result = await res.json();
 
+      const newStatus = result.status;
       setWebsites(prev => prev.map(site =>
-        site.id === id ? { ...site, status: result.status, lastChecked: Date.now() } : site
+        site.id === id ? { ...site, status: newStatus, lastChecked: Date.now() } : site
       ));
+
+      // Optional: Persist status to DB? 
+      // User didn't explicitly ask for history, but it's good practice.
+      // However, PUT requires auth token in my implementation.
+      // If public dashboard checks status, it can't save to DB if DB PUT is protected.
+      // For now, let's keep status ephemeral in client memory or allow public PUT for status only?
+      // Let's keep it client-side only for status to avoid auth complexity for public view.
+
     } catch (error) {
       setWebsites(prev => prev.map(site =>
         site.id === id ? { ...site, status: 'offline', lastChecked: Date.now() } : site
@@ -93,6 +121,8 @@ export default function Home() {
   const checkAllSites = () => {
     websites.forEach(site => checkSingleSite(site.id));
   };
+
+  // Removed saveWebsites watcher
 
   const handleCaptchaValidate = (isValid: boolean, token: string, answer: string) => {
     setIsCaptchaValid(isValid);
@@ -143,8 +173,6 @@ export default function Home() {
   };
 
   const checkAdminAccess = () => {
-    // We can rely on the state set by checkSession, or re-verify.
-    // For better UX, let's just check the local state which should be synced with server session on load.
     if (isAuthenticated()) {
       setView('admin');
     } else {
@@ -152,25 +180,51 @@ export default function Home() {
     }
   };
 
-  const addWebsite = (data: Omit<Website, 'id' | 'status' | 'lastChecked'>) => {
-    const newSite: Website = {
-      ...data,
-      id: crypto.randomUUID(),
-      status: 'unknown',
-      lastChecked: 0
-    };
-    const newList = [...websites, newSite];
-    setWebsites(newList);
-    checkSingleSite(newSite.id, newList);
+  const addWebsite = async (data: Omit<Website, 'id' | 'status' | 'lastChecked'>) => {
+    try {
+      const res = await fetch('/api/sites', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      });
+
+      if (res.ok) {
+        const newSite = await res.json();
+        setWebsites([...websites, newSite]);
+        checkSingleSite(newSite.id, [...websites, newSite]);
+      }
+    } catch (e) {
+      alert(t('admin.errorAdd'));
+    }
   };
 
-  const editWebsite = (updatedSite: Website) => {
-    setWebsites(websites.map(w => w.id === updatedSite.id ? updatedSite : w));
+  const editWebsite = async (updatedSite: Website) => {
+    // Current UI might pass full object, API expects partial? API code handles name/url.
+    try {
+      const res = await fetch(`/api/sites/${updatedSite.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: updatedSite.title, url: updatedSite.url })
+      });
+
+      if (res.ok) {
+        setWebsites(websites.map(w => w.id === updatedSite.id ? updatedSite : w));
+      }
+    } catch (e) {
+      console.error(e);
+    }
   };
 
-  const deleteWebsite = (id: string) => {
+  const deleteWebsite = async (id: string) => {
     if (window.confirm(t('admin.confirmDelete'))) {
-      setWebsites(websites.filter(w => w.id !== id));
+      try {
+        const res = await fetch(`/api/sites/${id}`, { method: 'DELETE' });
+        if (res.ok) {
+          setWebsites(websites.filter(w => w.id !== id));
+        }
+      } catch (e) {
+        alert('Failed to delete');
+      }
     }
   };
 
