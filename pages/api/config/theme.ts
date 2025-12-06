@@ -8,7 +8,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     if (req.method === 'GET') {
-        return res.status(200).json({ theme: storage.getTheme() });
+        return res.status(200).json({ theme: await storage.getTheme() });
     }
 
     if (req.method === 'POST') {
@@ -23,7 +23,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             return res.status(400).json({ error: 'Missing theme' });
         }
 
-        storage.setTheme(theme);
+        await storage.setTheme(theme);
 
         return res.status(200).json({ theme });
     }

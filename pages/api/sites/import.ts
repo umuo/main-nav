@@ -30,7 +30,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     let addedCount = 0;
 
-    const existingCategories = storage.getCategories();
+    const existingCategories = await storage.getCategories();
     // Create a map of existing categories for quick lookup
     const categoryMap = new Map(existingCategories.map(c => [c.name.toLowerCase(), c.id]));
     const validCategoryIds = new Set(existingCategories.map(c => c.id));
@@ -52,7 +52,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
                     // Create new category
                     const newId = randomUUID();
                     const newCategory = { id: newId, name: importedCategoryName };
-                    storage.addCategory(newCategory);
+                    await storage.addCategory(newCategory);
 
                     // Update our local lookups
                     categoryMap.set(lowerName, newId);
@@ -79,7 +79,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
                 categoryId: finalCategoryId
             };
 
-            storage.addWebsite(newSite);
+            await storage.addWebsite(newSite);
             addedCount++;
         }
 

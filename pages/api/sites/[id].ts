@@ -18,7 +18,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             return res.status(401).json({ error: 'Unauthorized' });
         }
 
-        const success = storage.deleteWebsite(siteId);
+        const success = await storage.deleteWebsite(siteId);
         if (success) {
             return res.status(200).json({ success: true });
         } else {
@@ -35,7 +35,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         }
 
         const updates = req.body;
-        const success = storage.updateWebsite(siteId, updates);
+        const success = await storage.updateWebsite(siteId, updates);
 
         if (success) {
             return res.status(200).json({ success: true });

@@ -23,7 +23,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             return res.status(400).json({ error: 'Missing name' });
         }
 
-        const success = storage.updateCategory(categoryId, name);
+        const success = await storage.updateCategory(categoryId, name);
         if (!success) {
             return res.status(404).json({ error: 'Category not found' });
         }
@@ -36,7 +36,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             return res.status(401).json({ error: 'Unauthorized' });
         }
 
-        const success = storage.deleteCategory(categoryId);
+        const success = await storage.deleteCategory(categoryId);
         if (!success) {
             return res.status(400).json({ error: 'Cannot delete default/last category or category not found' });
         }

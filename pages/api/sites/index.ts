@@ -10,7 +10,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     if (req.method === 'GET') {
-        const sites = storage.getWebsites();
+        const sites = await storage.getWebsites();
         return res.status(200).json(sites);
     }
 
@@ -37,7 +37,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             categoryId: categoryId // Storage will default if undefined
         };
 
-        storage.addWebsite(newSite);
+        await storage.addWebsite(newSite);
 
         return res.status(201).json(newSite);
     }
