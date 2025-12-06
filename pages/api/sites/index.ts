@@ -1,8 +1,13 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { getDb } from '../../../utils/db';
 import { verifyJwt } from '../../../utils/auth';
+import { randomUUID } from 'crypto';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+    if (req.method === 'OPTIONS') {
+        return res.status(200).end();
+    }
+
     const db = await getDb();
 
     if (req.method === 'GET') {
@@ -22,7 +27,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             return res.status(400).json({ error: 'Missing title or url' });
         }
 
-        const id = crypto.randomUUID();
+        const id = randomUUID();
         const status = 'unknown';
         const lastChecked = 0;
 
