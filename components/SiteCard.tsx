@@ -29,8 +29,15 @@ const SiteCard: React.FC<SiteCardProps> = ({ site, onRefreshOne }) => {
     return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
+  const handleCardClick = () => {
+    window.open(site.url, '_blank', 'noopener,noreferrer');
+  };
+
   return (
-    <div className="group relative glass-panel rounded-xl transition-all duration-300 hover:bg-[var(--glass-bg)] hover:shadow-lg hover:-translate-y-1 overflow-hidden flex flex-col h-full ring-1 ring-[var(--glass-border)] hover:ring-[var(--text-secondary)]">
+    <div
+      onClick={handleCardClick}
+      className="group relative glass-panel rounded-xl transition-all duration-300 hover:bg-[var(--glass-bg)] hover:shadow-lg hover:-translate-y-1 overflow-hidden flex flex-col h-full ring-1 ring-[var(--glass-border)] hover:ring-[var(--text-secondary)] cursor-pointer"
+    >
       {/* Top Status Gradient Line */}
       <div className={`h-1 w-full bg-gradient-to-r ${site.status === 'online' ? 'from-green-400 to-emerald-600' : site.status === 'offline' ? 'from-red-400 to-pink-600' : 'from-yellow-300 to-orange-400'}`}></div>
 
@@ -51,20 +58,12 @@ const SiteCard: React.FC<SiteCardProps> = ({ site, onRefreshOne }) => {
 
           <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity translate-x-2 group-hover:translate-x-0">
             <button
-              onClick={(e) => { e.preventDefault(); onRefreshOne(site.id); }}
+              onClick={(e) => { e.stopPropagation(); onRefreshOne(site.id); }}
               className="p-1.5 text-[var(--text-secondary)] hover:text-[var(--text-primary)] rounded-lg hover:bg-[var(--glass-bg)] transition-colors backdrop-blur-sm"
               title={t('dashboard.checkNow')}
             >
               <Activity size={16} />
             </button>
-            <a
-              href={site.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="p-1.5 text-[var(--text-secondary)] hover:text-[var(--text-primary)] rounded-lg hover:bg-[var(--glass-bg)] transition-colors backdrop-blur-sm"
-            >
-              <ExternalLink size={16} />
-            </a>
           </div>
         </div>
 
@@ -83,14 +82,6 @@ const SiteCard: React.FC<SiteCardProps> = ({ site, onRefreshOne }) => {
           )}
         </div>
       </div>
-
-      {/* Clickable Area for main card functionality */}
-      <a href={site.url} target="_blank" rel="noopener noreferrer" className="absolute inset-0 z-0" aria-label={`Visit ${site.title}`} onClick={(e) => {
-        // Prevent click if clicking action buttons
-        if ((e.target as HTMLElement).closest('button') || (e.target as HTMLElement).closest('a.text-[var(--text-secondary)]')) {
-          e.preventDefault();
-        }
-      }} />
     </div>
   );
 };

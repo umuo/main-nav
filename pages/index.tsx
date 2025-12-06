@@ -245,9 +245,9 @@ export default function Home() {
               <button
                 onClick={checkAdminAccess}
                 className="flex items-center gap-2 text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors text-sm font-medium p-2 rounded-lg hover:bg-white/10 backdrop-blur-sm"
+                title={t('dashboard.adminLogin')}
               >
                 <Lock size={16} />
-                <span className="hidden sm:inline">{t('dashboard.adminLogin')}</span>
               </button>
             ) : (
               <button

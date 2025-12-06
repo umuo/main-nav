@@ -1,17 +1,16 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { getDb } from '../../../utils/db';
+import { storage } from '../../../utils/storage';
 import { verifyJwt } from '../../../utils/auth';
 import { randomUUID } from 'crypto';
+import { Website } from '../../../types';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
     if (req.method === 'OPTIONS') {
         return res.status(200).end();
     }
 
-    const db = await getDb();
-
     if (req.method === 'GET') {
-        const sites = await db.all('SELECT * FROM websites');
+        const sites = storage.getWebsites();
         return res.status(200).json(sites);
     }
 
@@ -27,16 +26,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             return res.status(400).json({ error: 'Missing title or url' });
         }
 
-        const id = randomUUID();
-        const status = 'unknown';
-        const lastChecked = 0;
+        const newSite: Website = {
+            id: randomUUID(),
+            title,
+            url,
+            description: description || '',
+            iconUrl: iconUrl || '',
+            status: 'unknown',
+            lastChecked: 0
+        };
 
-        await db.run(
-            'INSERT INTO websites (id, title, url, description, iconUrl, status, lastChecked) VALUES (?, ?, ?, ?, ?, ?, ?)',
-            id, title, url, description, iconUrl, status, lastChecked
-        );
+        storage.addWebsite(newSite);
 
-        return res.status(201).json({ id, title, url, description, iconUrl, status, lastChecked });
+        return res.status(201).json(newSite);
     }
 
     return res.status(405).json({ error: 'Method not allowed' });

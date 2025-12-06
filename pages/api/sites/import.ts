@@ -1,5 +1,6 @@
+```typescript
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { getDb } from '../../../utils/db';
+import { storage } from '../../../utils/storage';
 import { verifyJwt } from '../../../utils/auth';
 import { Website } from '../../../types';
 import { randomUUID } from 'crypto';
@@ -19,12 +20,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     const sites = req.body as Website[];
-
+    
     if (!Array.isArray(sites)) {
         return res.status(400).json({ error: 'Invalid format. Expected an array of websites.' });
     }
-
-    const db = await getDb();
 
     // We will attempt to insert valid sites. 
     // Strategy: Insert new ones. 
@@ -34,38 +33,29 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // Let's generate new IDs to be safe against duplicates unless the user specifically clears DB first.
 
     let addedCount = 0;
-
+    
     try {
-        await db.run('BEGIN TRANSACTION');
-
-        const stmt = await db.prepare('INSERT INTO websites (id, title, url, description, iconUrl, status, lastChecked) VALUES (?, ?, ?, ?, ?, ?, ?)');
-
         for (const site of sites) {
             if (!site.title || !site.url) continue;
 
-            const id = randomUUID();
-            const status = 'unknown';
-            const lastChecked = 0;
-
-            await stmt.run(
-                id,
-                site.title,
-                site.url,
-                site.description || '',
-                site.iconUrl || '',
-                status,
-                lastChecked
-            );
+            const newSite: Website = {
+                id: randomUUID(),
+                title: site.title,
+                url: site.url,
+                description: site.description || '',
+                iconUrl: site.iconUrl || '',
+                status: 'unknown',
+                lastChecked: 0
+            };
+            
+            storage.addWebsite(newSite);
             addedCount++;
         }
-
-        await stmt.finalize();
-        await db.run('COMMIT');
-
+        
         return res.status(200).json({ message: 'Import successful', count: addedCount });
     } catch (error) {
-        await db.run('ROLLBACK');
         console.error('Import error', error);
         return res.status(500).json({ error: 'Failed to import websites' });
     }
 }
+```

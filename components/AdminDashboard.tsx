@@ -21,13 +21,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ websites, onAdd, onEdit
 
   // Form State
   const [title, setTitle] = useState('');
-  const [url, setUrl] = useState('');
+  const [url, setUrl] = useState('https://');
   const [description, setDescription] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
 
   const resetForm = () => {
     setTitle('');
-    setUrl('');
+    setUrl('https://');
     setDescription('');
     setEditingId(null);
   };
