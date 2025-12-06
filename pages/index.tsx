@@ -280,8 +280,8 @@ export default function Home() {
       <header className="sticky top-0 z-40 glass-panel border-b-1 rounded-none">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
           <div className="flex items-center gap-3 cursor-pointer group" onClick={() => setView('dashboard')}>
-            <div className="w-10 h-10 glass-panel rounded-xl flex items-center justify-center text-[var(--accent-color)] group-hover:scale-110 transition-transform">
-              <Wifi size={24} />
+            <div className="w-10 h-10 glass-panel rounded-xl flex items-center justify-center text-[var(--accent-color)] group-hover:scale-110 transition-transform overflow-hidden">
+              <img src="/logo_transparent.png" alt="Logo" className="w-full h-full object-cover" />
             </div>
             <h1 className="font-handwritten text-4xl text-transparent bg-clip-text bg-gradient-to-r from-pink-400 to-purple-500 drop-shadow-md">{t('appName')}</h1>
           </div>
