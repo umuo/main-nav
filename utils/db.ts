@@ -8,14 +8,14 @@ const dbPath = path.join(process.cwd(), 'sentinel.db');
 let dbInstance: Database | null = null;
 
 export async function getDb() {
-    if (dbInstance) return dbInstance;
+  if (dbInstance) return dbInstance;
 
-    dbInstance = await open({
-        filename: dbPath,
-        driver: sqlite3.Database
-    });
+  dbInstance = await open({
+    filename: dbPath,
+    driver: sqlite3.Database
+  });
 
-    await dbInstance.exec(`
+  await dbInstance.exec(`
     CREATE TABLE IF NOT EXISTS websites (
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
@@ -25,8 +25,13 @@ export async function getDb() {
       status TEXT DEFAULT 'unknown',
       lastChecked INTEGER DEFAULT 0,
       latency INTEGER
-    )
+    );
+
+    CREATE TABLE IF NOT EXISTS config (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
   `);
 
-    return dbInstance;
+  return dbInstance;
 }

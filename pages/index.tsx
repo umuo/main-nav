@@ -24,18 +24,9 @@ export default function Home() {
 
   useEffect(() => {
     checkSession();
-
-    // const sites = getWebsites();
-    // setWebsites(sites);
-    // Moved to fetchWebsites()
-
-    // Initial check moved to fetchWebsites logic
-    // sites.forEach(site => { ... });
-
     const interval = setInterval(() => {
       checkAllSites();
     }, CHECK_INTERVAL_MS);
-
     return () => clearInterval(interval);
   }, []);
 
@@ -44,9 +35,7 @@ export default function Home() {
       const res = await fetch('/api/auth/me');
       if (res.ok) {
         setAuthenticated(true);
-        setView('admin'); // Automatically go to admin if logged in? Maybe just set authed state.
-        // Actually, let's keep view logic separate or user might get redirected unexpectedly.
-        // But previously checkAdminAccess used isAuthenticated().
+        setView('admin');
       } else {
         setAuthenticated(false);
       }
@@ -55,9 +44,6 @@ export default function Home() {
     }
   };
 
-  // ... (auth useEffects remain)
-
-  // Load sites from API on mount
   useEffect(() => {
     fetchWebsites();
   }, []);
@@ -68,8 +54,6 @@ export default function Home() {
       if (res.ok) {
         const data = await res.json();
         setWebsites(data);
-
-        // Trigger check for unknown status sites?
         data.forEach((site: Website) => {
           if (site.status === 'unknown') {
             checkSingleSite(site.id, data);
@@ -82,7 +66,6 @@ export default function Home() {
   };
 
   const checkSingleSite = async (id: string, currentList = websites) => {
-    // Optimistic update locally
     const updatedList = currentList.map(site =>
       site.id === id ? { ...site, status: 'checking' as const } : site
     );
@@ -98,19 +81,10 @@ export default function Home() {
         body: JSON.stringify({ url: siteToCheck.url })
       });
       const result = await res.json();
-
       const newStatus = result.status;
       setWebsites(prev => prev.map(site =>
         site.id === id ? { ...site, status: newStatus, lastChecked: Date.now() } : site
       ));
-
-      // Optional: Persist status to DB? 
-      // User didn't explicitly ask for history, but it's good practice.
-      // However, PUT requires auth token in my implementation.
-      // If public dashboard checks status, it can't save to DB if DB PUT is protected.
-      // For now, let's keep status ephemeral in client memory or allow public PUT for status only?
-      // Let's keep it client-side only for status to avoid auth complexity for public view.
-
     } catch (error) {
       setWebsites(prev => prev.map(site =>
         site.id === id ? { ...site, status: 'offline', lastChecked: Date.now() } : site
@@ -121,8 +95,6 @@ export default function Home() {
   const checkAllSites = () => {
     websites.forEach(site => checkSingleSite(site.id));
   };
-
-  // Removed saveWebsites watcher
 
   const handleCaptchaValidate = (isValid: boolean, token: string, answer: string) => {
     setIsCaptchaValid(isValid);
@@ -199,7 +171,6 @@ export default function Home() {
   };
 
   const editWebsite = async (updatedSite: Website) => {
-    // Current UI might pass full object, API expects partial? API code handles name/url.
     try {
       const res = await fetch(`/api/sites/${updatedSite.id}`, {
         method: 'PUT',
@@ -236,25 +207,25 @@ export default function Home() {
   const offlineCount = websites.filter(w => w.status === 'offline').length;
 
   return (
-    <div className="min-h-screen flex flex-col font-sans text-gray-800">
-      <header className="bg-white border-b border-gray-200 sticky top-0 z-40 shadow-sm backdrop-blur-md bg-opacity-90">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-2 cursor-pointer" onClick={() => setView('dashboard')}>
-            <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white shadow-blue-200 shadow-md">
-              <Wifi size={20} />
+    <div className="min-h-screen flex flex-col font-sans transition-colors duration-500">
+      <header className="sticky top-0 z-40 glass-panel border-b-1 rounded-none">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
+          <div className="flex items-center gap-3 cursor-pointer group" onClick={() => setView('dashboard')}>
+            <div className="w-10 h-10 glass-panel rounded-xl flex items-center justify-center text-[var(--accent-color)] group-hover:scale-110 transition-transform">
+              <Wifi size={24} />
             </div>
-            <h1 className="text-xl font-bold tracking-tight bg-gradient-to-r from-blue-700 to-blue-500 bg-clip-text text-transparent">{t('appName')}</h1>
+            <h1 className="font-handwritten text-4xl text-transparent bg-clip-text bg-gradient-to-r from-pink-400 to-purple-500 drop-shadow-md">{t('appName')}</h1>
           </div>
 
           <nav className="flex items-center gap-2 md:gap-4">
             {view === 'dashboard' && (
               <div className="hidden md:flex items-center gap-4 text-sm font-medium mr-4">
-                <span className="flex items-center gap-1.5 text-green-600 bg-green-50 px-3 py-1 rounded-full border border-green-100">
+                <span className="flex items-center gap-1.5 text-green-500 bg-green-500/10 px-3 py-1 rounded-full border border-green-500/20 backdrop-blur-sm">
                   <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
                   {onlineCount} {t('dashboard.online')}
                 </span>
                 {offlineCount > 0 && (
-                  <span className="flex items-center gap-1.5 text-red-600 bg-red-50 px-3 py-1 rounded-full border border-red-100">
+                  <span className="flex items-center gap-1.5 text-red-500 bg-red-500/10 px-3 py-1 rounded-full border border-red-500/20 backdrop-blur-sm">
                     <WifiOff size={12} />
                     {offlineCount} {t('dashboard.offline')}
                   </span>
@@ -264,7 +235,7 @@ export default function Home() {
 
             <button
               onClick={toggleLanguage}
-              className="flex items-center gap-1 p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors text-xs font-bold uppercase"
+              className="flex items-center gap-1 p-2 text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-white/10 rounded-lg transition-colors text-xs font-bold uppercase backdrop-blur-sm"
             >
               <Languages size={18} />
               <span>{language}</span>
@@ -273,7 +244,7 @@ export default function Home() {
             {view === 'dashboard' ? (
               <button
                 onClick={checkAdminAccess}
-                className="flex items-center gap-2 text-gray-600 hover:text-blue-600 transition-colors text-sm font-medium p-2 rounded-lg hover:bg-gray-50"
+                className="flex items-center gap-2 text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors text-sm font-medium p-2 rounded-lg hover:bg-white/10 backdrop-blur-sm"
               >
                 <Lock size={16} />
                 <span className="hidden sm:inline">{t('dashboard.adminLogin')}</span>
@@ -281,7 +252,7 @@ export default function Home() {
             ) : (
               <button
                 onClick={() => setView('dashboard')}
-                className="flex items-center gap-2 text-gray-600 hover:text-blue-600 transition-colors text-sm font-medium p-2 rounded-lg hover:bg-gray-50"
+                className="flex items-center gap-2 text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors text-sm font-medium p-2 rounded-lg hover:bg-white/10 backdrop-blur-sm"
               >
                 <LayoutDashboard size={16} />
                 <span className="hidden sm:inline">{t('dashboard.dashboardLink')}</span>
@@ -291,19 +262,19 @@ export default function Home() {
         </div>
       </header>
 
-      <main className="flex-grow bg-gray-50/50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <main className="flex-grow">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
 
           {view === 'dashboard' && (
             <div className="animate-fade-in-up">
-              <div className="flex justify-between items-end mb-6">
+              <div className="flex justify-between items-end mb-8">
                 <div>
-                  <h2 className="text-2xl font-bold text-gray-900">{t('dashboard.systemStatus')}</h2>
-                  <p className="text-gray-500 mt-1">{t('dashboard.monitoringDesc', { count: websites.length })}</p>
+                  <h2 className="text-3xl font-bold text-[var(--text-primary)] drop-shadow-sm">{t('dashboard.systemStatus')}</h2>
+                  <p className="text-[var(--text-secondary)] mt-1 text-lg">{t('dashboard.monitoringDesc', { count: websites.length })}</p>
                 </div>
                 <button
                   onClick={() => checkAllSites()}
-                  className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 shadow-sm transition-all text-sm font-medium"
+                  className="flex items-center gap-2 px-6 py-2 glass-panel text-[var(--text-primary)] rounded-xl hover:bg-white/10 transition-all text-sm font-medium"
                 >
                   <RefreshCcw size={16} />
                   {t('dashboard.refreshAll')}
@@ -319,10 +290,10 @@ export default function Home() {
                   />
                 ))}
                 {websites.length === 0 && (
-                  <div className="col-span-full flex flex-col items-center justify-center p-12 text-center text-gray-400 bg-white rounded-xl border border-dashed border-gray-300">
+                  <div className="col-span-full flex flex-col items-center justify-center p-12 text-center text-gray-400 glass-panel rounded-2xl border-dashed border-white/20">
                     <WifiOff size={48} className="mb-4 opacity-50" />
-                    <p className="text-lg">{t('dashboard.noSites')}</p>
-                    <button onClick={checkAdminAccess} className="text-blue-600 hover:underline mt-2">{t('dashboard.loginToAdd')}</button>
+                    <p className="text-lg text-[var(--text-secondary)]">{t('dashboard.noSites')}</p>
+                    <button onClick={checkAdminAccess} className="text-[var(--accent-color)] hover:underline mt-2 font-medium">{t('dashboard.loginToAdd')}</button>
                   </div>
                 )}
               </div>
@@ -331,64 +302,64 @@ export default function Home() {
 
           {view === 'login' && (
             <div className="flex justify-center items-center min-h-[60vh] animate-fade-in">
-              <div className="bg-white p-8 rounded-2xl shadow-xl border border-gray-100 w-full max-w-md relative overflow-hidden">
-                <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 to-indigo-600"></div>
+              <div className="glass-panel p-8 rounded-2xl w-full max-w-md relative overflow-hidden">
+                <div className="absolute top-0 left-0 w-full h-1 bg-[var(--accent-gradient)]"></div>
 
                 <div className="text-center mb-8">
-                  <div className="mx-auto w-12 h-12 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mb-4">
-                    <LogIn size={24} />
+                  <div className="mx-auto w-16 h-16 bg-white/10 text-[var(--accent-color)] rounded-full flex items-center justify-center mb-4 backdrop-blur-md border border-white/10">
+                    <LogIn size={28} />
                   </div>
-                  <h2 className="text-2xl font-bold text-gray-900">{t('login.title')}</h2>
-                  <p className="text-gray-500 text-sm mt-1">{t('login.subtitle')}</p>
+                  <h2 className="text-2xl font-bold text-[var(--text-primary)]">{t('login.title')}</h2>
+                  <p className="text-[var(--text-secondary)] text-sm mt-1">{t('login.subtitle')}</p>
                 </div>
 
                 <form onSubmit={handleLogin} className="space-y-5">
                   {loginError && (
-                    <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm text-center border border-red-100">
+                    <div className="bg-red-500/20 text-red-200 p-3 rounded-lg text-sm text-center border border-red-500/30">
                       {loginError}
                     </div>
                   )}
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">{t('login.username')}</label>
+                    <label className="block text-sm font-medium text-[var(--text-secondary)] mb-1">{t('login.username')}</label>
                     <input
                       type="text"
                       value={loginUsername}
                       onChange={(e) => setLoginUsername(e.target.value)}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all"
+                      className="w-full px-4 py-2 bg-black/10 border border-white/10 rounded-lg text-[var(--text-primary)] placeholder-gray-500 focus:ring-2 focus:ring-[var(--accent-color)] focus:border-transparent outline-none transition-all"
                       placeholder={t('login.username')}
                       disabled={isLoggingIn}
                     />
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">{t('login.password')}</label>
+                    <label className="block text-sm font-medium text-[var(--text-secondary)] mb-1">{t('login.password')}</label>
                     <input
                       type="password"
                       value={loginPassword}
                       onChange={(e) => setLoginPassword(e.target.value)}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all"
+                      className="w-full px-4 py-2 bg-black/10 border border-white/10 rounded-lg text-[var(--text-primary)] placeholder-gray-500 focus:ring-2 focus:ring-[var(--accent-color)] focus:border-transparent outline-none transition-all"
                       placeholder="••••••••"
                       disabled={isLoggingIn}
                     />
                   </div>
 
                   <div className="pt-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-2">{t('login.securityCheck')}</label>
+                    <label className="block text-sm font-medium text-[var(--text-secondary)] mb-2">{t('login.securityCheck')}</label>
                     <Captcha onValidate={handleCaptchaValidate} />
                   </div>
 
                   <button
                     type="submit"
                     disabled={isLoggingIn}
-                    className="w-full bg-blue-600 text-white py-2.5 rounded-lg hover:bg-blue-700 transition-colors font-semibold shadow-lg shadow-blue-200 mt-4 disabled:bg-blue-400 disabled:cursor-not-allowed"
+                    className="w-full bg-[var(--accent-color)] text-white py-3 rounded-lg hover:opacity-90 transition-all font-semibold shadow-lg mt-4 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {isLoggingIn ? t('status.checking') : t('login.submit')}
                   </button>
                 </form>
 
                 <div className="mt-6 text-center">
-                  <button onClick={() => setView('dashboard')} className="text-sm text-gray-500 hover:text-gray-700">
+                  <button onClick={() => setView('dashboard')} className="text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors">
                     &larr; {t('login.back')}
                   </button>
                 </div>
@@ -411,8 +382,8 @@ export default function Home() {
         </div>
       </main>
 
-      <footer className="bg-white border-t border-gray-200 py-6">
-        <div className="max-w-7xl mx-auto px-4 text-center text-sm text-gray-500">
+      <footer className="border-t border-white/10 py-8 bg-black/10 backdrop-blur-sm">
+        <div className="max-w-7xl mx-auto px-4 text-center text-sm text-[var(--text-secondary)]">
           <p>&copy; {new Date().getFullYear()} {t('dashboard.footer')}</p>
         </div>
       </footer>

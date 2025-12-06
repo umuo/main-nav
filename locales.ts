@@ -1,6 +1,6 @@
 export const translations = {
   zh: {
-    appName: "哨兵导航",
+    appName: "Vibe Coding",
     status: {
       online: "运行正常",
       offline: "无法访问",
@@ -18,7 +18,7 @@ export const translations = {
       offline: "离线",
       adminLogin: "管理员登录",
       dashboardLink: "返回仪表盘",
-      footer: "哨兵导航。所有系统运行正常。",
+      footer: "Vibe Coding。所有系统运行正常。",
       checkNow: "立即检测"
     },
     login: {
@@ -60,11 +60,15 @@ export const translations = {
         create: "创建",
         update: "更新",
       },
-      confirmDelete: "确定要删除此网站监控吗？"
+      confirmDelete: "确定要删除此网站监控吗？",
+      import: "导入",
+      export: "导出",
+      importSuccess: "成功导入 {count} 个网站。",
+      importError: "导入失败，请检查文件格式。"
     }
   },
   en: {
-    appName: "SentinelNav",
+    appName: "Vibe Coding",
     status: {
       online: "Operational",
       offline: "Unreachable",
@@ -82,7 +86,7 @@ export const translations = {
       offline: "Offline",
       adminLogin: "Admin Login",
       dashboardLink: "Dashboard",
-      footer: "SentinelNav. All systems operational.",
+      footer: "Vibe Coding. All systems operational.",
       checkNow: "Check Status Now"
     },
     login: {
@@ -124,7 +128,11 @@ export const translations = {
         create: "Create",
         update: "Update",
       },
-      confirmDelete: "Are you sure you want to delete this website monitoring?"
+      confirmDelete: "Are you sure you want to delete this website monitoring?",
+      import: "Import",
+      export: "Export",
+      importSuccess: "Successfully imported {count} websites.",
+      importError: "Import failed. Please check file format."
     }
   }
 };

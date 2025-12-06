@@ -13,10 +13,11 @@ const SiteCard: React.FC<SiteCardProps> = ({ site, onRefreshOne }) => {
   const { t } = useTranslation();
 
   const statusColors = {
-    online: 'bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.6)]',
-    offline: 'bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.6)]',
-    checking: 'bg-yellow-400 animate-pulse',
-    unknown: 'bg-gray-300',
+    // Brighter colors for dark mode context
+    online: 'bg-green-400 shadow-[0_0_15px_rgba(74,222,128,0.5)]',
+    offline: 'bg-red-400 shadow-[0_0_15px_rgba(248,113,113,0.5)]',
+    checking: 'bg-yellow-300 animate-pulse shadow-[0_0_15px_rgba(253,224,71,0.5)]',
+    unknown: 'bg-gray-400',
   };
 
   const getStatusText = (status: Website['status']) => {
@@ -29,38 +30,38 @@ const SiteCard: React.FC<SiteCardProps> = ({ site, onRefreshOne }) => {
   };
 
   return (
-    <div className="group relative bg-white rounded-xl shadow-sm hover:shadow-md transition-all duration-300 border border-gray-100 overflow-hidden flex flex-col h-full">
-      {/* Top Status Indicator Line */}
-      <div className={`h-1 w-full ${statusColors[site.status] === statusColors.checking ? 'bg-yellow-400' : site.status === 'online' ? 'bg-green-500' : site.status === 'offline' ? 'bg-red-500' : 'bg-gray-300'}`}></div>
-      
-      <div className="p-5 flex flex-col flex-grow">
+    <div className="group relative glass-panel rounded-xl transition-all duration-300 hover:bg-[var(--glass-bg)] hover:shadow-lg hover:-translate-y-1 overflow-hidden flex flex-col h-full ring-1 ring-[var(--glass-border)] hover:ring-[var(--text-secondary)]">
+      {/* Top Status Gradient Line */}
+      <div className={`h-1 w-full bg-gradient-to-r ${site.status === 'online' ? 'from-green-400 to-emerald-600' : site.status === 'offline' ? 'from-red-400 to-pink-600' : 'from-yellow-300 to-orange-400'}`}></div>
+
+      <div className="p-5 flex flex-col flex-grow relative z-10">
         <div className="flex justify-between items-start mb-4">
           <div className="relative">
-             <img 
-               src={getFaviconUrl(site.url)} 
-               alt={`${site.title} icon`}
-               className="w-12 h-12 rounded-lg bg-gray-50 object-contain p-1 border border-gray-100"
-               onError={(e) => {
-                 (e.target as HTMLImageElement).src = 'https://via.placeholder.com/48?text=WEB';
-               }}
-             />
-             {/* Status Dot Overlay */}
-             <div className={`absolute -top-1 -right-1 w-4 h-4 rounded-full border-2 border-white ${statusColors[site.status]}`} title={getStatusText(site.status)}></div>
+            <img
+              src={getFaviconUrl(site.url)}
+              alt={`${site.title} icon`}
+              className="w-12 h-12 rounded-xl bg-[var(--glass-bg)] object-contain p-1.5 backdrop-blur-sm border border-[var(--glass-border)] shadow-inner group-hover:scale-110 transition-transform duration-300"
+              onError={(e) => {
+                (e.target as HTMLImageElement).src = 'https://via.placeholder.com/48/ffffff/000000?text=WEB';
+              }}
+            />
+            {/* Status Dot Overlay */}
+            <div className={`absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full border-2 border-slate-800 ${statusColors[site.status]}`} title={getStatusText(site.status)}></div>
           </div>
-          
-          <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-            <button 
+
+          <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity translate-x-2 group-hover:translate-x-0">
+            <button
               onClick={(e) => { e.preventDefault(); onRefreshOne(site.id); }}
-              className="p-1.5 text-gray-400 hover:text-blue-600 rounded-md hover:bg-blue-50"
+              className="p-1.5 text-[var(--text-secondary)] hover:text-[var(--text-primary)] rounded-lg hover:bg-[var(--glass-bg)] transition-colors backdrop-blur-sm"
               title={t('dashboard.checkNow')}
             >
               <Activity size={16} />
             </button>
-            <a 
-              href={site.url} 
-              target="_blank" 
+            <a
+              href={site.url}
+              target="_blank"
               rel="noopener noreferrer"
-              className="p-1.5 text-gray-400 hover:text-blue-600 rounded-md hover:bg-blue-50"
+              className="p-1.5 text-[var(--text-secondary)] hover:text-[var(--text-primary)] rounded-lg hover:bg-[var(--glass-bg)] transition-colors backdrop-blur-sm"
             >
               <ExternalLink size={16} />
             </a>
@@ -68,27 +69,27 @@ const SiteCard: React.FC<SiteCardProps> = ({ site, onRefreshOne }) => {
         </div>
 
         <div>
-          <h3 className="text-lg font-bold text-gray-800 mb-1 group-hover:text-blue-600 transition-colors line-clamp-1">{site.title}</h3>
-          <p className="text-sm text-gray-500 line-clamp-2 mb-3 h-10">{site.description || site.url}</p>
+          <h3 className="text-xl font-bold text-[var(--text-primary)] mb-1 group-hover:text-[var(--accent-color)] transition-colors line-clamp-1 tracking-tight">{site.title}</h3>
+          <p className="text-sm text-[var(--text-secondary)] line-clamp-2 mb-4 h-10 leading-relaxed font-light">{site.description || site.url}</p>
         </div>
 
-        <div className="mt-auto pt-4 border-t border-gray-50 flex items-center justify-between text-xs text-gray-400">
-           <div className="flex items-center gap-1">
-             <Clock size={12} />
-             <span>{formatTime(site.lastChecked)}</span>
-           </div>
-           {site.status === 'online' && site.latency && (
-             <span className="text-green-600 font-medium">{site.latency}ms</span>
-           )}
+        <div className="mt-auto pt-4 border-t border-[var(--glass-border)] flex items-center justify-between text-xs text-[var(--text-secondary)] font-medium">
+          <div className="flex items-center gap-1.5">
+            <Clock size={12} className="text-[var(--text-secondary)]" />
+            <span className="text-[var(--text-secondary)]">{formatTime(site.lastChecked)}</span>
+          </div>
+          {site.status === 'online' && site.latency && (
+            <span className="text-emerald-400 font-semibold bg-emerald-900/20 px-2 py-0.5 rounded-full border border-emerald-500/20">{site.latency}ms</span>
+          )}
         </div>
       </div>
-      
+
       {/* Clickable Area for main card functionality */}
-      <a href={site.url} target="_blank" rel="noopener noreferrer" className="absolute inset-0 z-0" aria-hidden="true" onClick={(e) => {
-          // Prevent click if clicking action buttons
-          if ((e.target as HTMLElement).closest('button') || (e.target as HTMLElement).closest('a.text-gray-400')) {
-              e.preventDefault();
-          }
+      <a href={site.url} target="_blank" rel="noopener noreferrer" className="absolute inset-0 z-0" aria-label={`Visit ${site.title}`} onClick={(e) => {
+        // Prevent click if clicking action buttons
+        if ((e.target as HTMLElement).closest('button') || (e.target as HTMLElement).closest('a.text-[var(--text-secondary)]')) {
+          e.preventDefault();
+        }
       }} />
     </div>
   );
