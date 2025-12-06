@@ -10,7 +10,7 @@ interface ThemeContextType {
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-    const [theme, setThemeState] = useState<Theme>('vibe');
+    const [theme, setThemeState] = useState<Theme>('minimal');
 
     // Fetch global theme on mount
     useEffect(() => {
@@ -21,7 +21,10 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
                     setThemeState(data.theme);
                 }
             })
-            .catch(err => console.error('Failed to load theme', err));
+            .catch(err => {
+                console.error('Failed to load theme', err);
+                setThemeState('minimal');
+            });
     }, []);
 
     // Sync to DOM when state changes

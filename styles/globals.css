@@ -9,28 +9,28 @@
 }
 
 :root {
-  /* Default Vibe Theme */
-  --bg-gradient: linear-gradient(135deg, #1a1c2c 0%, #4a192c 50%, #1a1c2c 100%);
-  --text-primary: #ffffff;
-  --text-secondary: #e2e8f0;
-  --glass-bg: rgba(30, 30, 40, 0.6);
-  --glass-border: rgba(255, 255, 255, 0.1);
-  --glass-blur: 16px;
-  --accent-color: #ec4899;
-  --accent-gradient: linear-gradient(to right, #f472b6, #c084fc);
+  /* Default Minimal Theme */
+  --bg-gradient: linear-gradient(to bottom, #f8fafc, #e2e8f0);
+  --text-primary: #1e293b;
+  --text-secondary: #475569;
+  --glass-bg: rgba(255, 255, 255, 0.75);
+  --glass-border: rgba(0, 0, 0, 0.1);
+  --glass-blur: 20px;
+  --accent-color: #2563eb;
+  --accent-gradient: linear-gradient(to right, #3b82f6, #1d4ed8);
   --font-logo: 'Dancing Script', cursive;
-  --text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+  --text-shadow: none;
 
-  /* Status Colors */
-  --status-online-bg: rgba(20, 83, 45, 0.3);
-  --status-online-text: #86efac;
-  --status-online-border: rgba(34, 197, 94, 0.2);
-  --status-offline-bg: rgba(127, 29, 29, 0.3);
-  --status-offline-text: #fca5a5;
-  --status-offline-border: rgba(239, 68, 68, 0.2);
-  --status-checking-bg: rgba(113, 63, 18, 0.3);
-  --status-checking-text: #fde047;
-  --status-checking-border: rgba(234, 179, 8, 0.2);
+  /* Status Colors - Minimal */
+  --status-online-bg: #dcfce7;
+  --status-online-text: #166534;
+  --status-online-border: #bbf7d0;
+  --status-offline-bg: #fee2e2;
+  --status-offline-text: #991b1b;
+  --status-offline-border: #fecaca;
+  --status-checking-bg: #fef9c3;
+  --status-checking-text: #854d0e;
+  --status-checking-border: #fde047;
 }
 
 [data-theme='sunset'] {

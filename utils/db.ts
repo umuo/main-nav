@@ -3,7 +3,11 @@ import { open, Database } from 'sqlite';
 import path from 'path';
 
 // db.sqlite will be created in the project root
-const dbPath = path.join(process.cwd(), 'sentinel.db');
+// db.sqlite will be created in the project root
+// In Vercel/Serverless, root is read-only. We must use /tmp.
+const dbPath = process.env.VERCEL || process.env.NODE_ENV === 'production'
+  ? path.join('/tmp', 'sentinel.db')
+  : path.join(process.cwd(), 'sentinel.db');
 
 let dbInstance: Database | null = null;
 

@@ -3,6 +3,10 @@ import { getDb } from '../../../utils/db';
 import { verifyJwt } from '../../../utils/auth';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+    if (req.method === 'OPTIONS') {
+        return res.status(200).end();
+    }
+
     const db = await getDb();
 
     if (req.method === 'GET') {
