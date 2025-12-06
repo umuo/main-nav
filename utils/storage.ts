@@ -178,7 +178,10 @@ class VercelBlobStore extends JsonDbStore {
             await put(this.fileName, JSON.stringify(data), {
                 access: 'public',
                 addRandomSuffix: false, // Crucial: Keep the name constant!
-                token: this.token
+                token: this.token,
+                cacheControlMaxAge: 0, // Ensure fresh content
+                // @ts-ignore - types might be slightly outdated in some envs, but valid option
+                allowOverwrite: true
             });
         } catch (error) {
             console.error('Blob save error:', error);
