@@ -12,33 +12,39 @@ declare global {
     } | undefined;
 }
 
-if (!global.mockDb) {
-    global.mockDb = {
-        websites: [],
-        config: { theme: 'minimal' },
-        categories: [
-            { id: 'default', name: 'General' }
-        ]
-    };
-}
-
-const db = global.mockDb!;
+const getDb = () => {
+    if (!global.mockDb) {
+        global.mockDb = {
+            websites: [],
+            config: { theme: 'minimal' },
+            categories: [
+                { id: 'default', name: 'General' }
+            ]
+        };
+    }
+    return global.mockDb;
+};
 
 export const storage = {
     getWebsites: () => {
+        const db = getDb();
+        console.log('[Storage] getWebsites:', db.websites.length);
         return db.websites;
     },
 
     addWebsite: (site: Website) => {
+        const db = getDb();
         // Default to first category if none specified
         if (!site.categoryId && db.categories.length > 0) {
             site.categoryId = db.categories[0].id;
         }
         db.websites.push(site);
+        console.log('[Storage] addWebsite:', site.title, 'Total:', db.websites.length);
         return site;
     },
 
     updateWebsite: (id: string, updates: Partial<Website>) => {
+        const db = getDb();
         const index = db.websites.findIndex(w => w.id === id);
         if (index !== -1) {
             db.websites[index] = { ...db.websites[index], ...updates };
@@ -48,21 +54,23 @@ export const storage = {
     },
 
     deleteWebsite: (id: string) => {
+        const db = getDb();
         const initialLength = db.websites.length;
         db.websites = db.websites.filter(w => w.id !== id);
         return db.websites.length < initialLength;
     },
 
     getCategories: () => {
-        return db.categories;
+        return getDb().categories;
     },
 
     addCategory: (category: Category) => {
-        db.categories.push(category);
+        getDb().categories.push(category);
         return category;
     },
 
     updateCategory: (id: string, name: string) => {
+        const db = getDb();
         const category = db.categories.find(c => c.id === id);
         if (category) {
             category.name = name;
@@ -72,6 +80,7 @@ export const storage = {
     },
 
     deleteCategory: (id: string) => {
+        const db = getDb();
         // Prevent deleting the last category or default?
         // Let's prevent deleting if it's the only one.
         if (db.categories.length <= 1) return false;
@@ -90,10 +99,10 @@ export const storage = {
     },
 
     getTheme: (): Theme => {
-        return (db.config.theme as Theme) || 'minimal';
+        return (getDb().config.theme as Theme) || 'minimal';
     },
 
     setTheme: (theme: Theme) => {
-        db.config.theme = theme;
+        getDb().config.theme = theme;
     }
 };
