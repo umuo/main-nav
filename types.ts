@@ -1,3 +1,8 @@
+export interface Category {
+  id: string;
+  name: string;
+}
+
 export interface Website {
   id: string;
   title: string;
@@ -7,6 +12,7 @@ export interface Website {
   status: 'online' | 'offline' | 'checking' | 'unknown';
   lastChecked: number; // Timestamp
   latency?: number; // In ms
+  categoryId?: string; // Optional for backward compatibility, but we will default it
 }
 
 export interface User {

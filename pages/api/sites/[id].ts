@@ -18,8 +18,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             return res.status(401).json({ error: 'Unauthorized' });
         }
 
-        storage.deleteWebsite(siteId);
-        return res.status(200).json({ success: true });
+        const success = storage.deleteWebsite(siteId);
+        if (success) {
+            return res.status(200).json({ success: true });
+        } else {
+            // Technically if it doesn't exist we could say 404, but idempotent delete is fine too.
+            // But storage returns false if length didn't change (not found).
+            return res.status(404).json({ error: 'Site not found' });
+        }
     }
 
     if (req.method === 'PUT') {
@@ -29,9 +35,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         }
 
         const updates = req.body;
-        // Basic sanitization or just pass through updates supported by Partial<Website>
-        // Ideally we filter keys but req.body matches mostly.
-
         const success = storage.updateWebsite(siteId, updates);
 
         if (success) {

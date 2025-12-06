@@ -1,8 +1,8 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { storage } from '../../../utils/storage';
 import { verifyJwt } from '../../../utils/auth';
+import { Category } from '../../../types';
 import { randomUUID } from 'crypto';
-import { Website } from '../../../types';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
     if (req.method === 'OPTIONS') {
@@ -10,36 +10,28 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     if (req.method === 'GET') {
-        const sites = storage.getWebsites();
-        return res.status(200).json(sites);
+        const categories = storage.getCategories();
+        return res.status(200).json(categories);
     }
 
     if (req.method === 'POST') {
-        // Protected endpoint
         const { auth_token } = req.cookies;
         if (!auth_token || !verifyJwt(auth_token)) {
             return res.status(401).json({ error: 'Unauthorized' });
         }
 
-        const { title, url, description, iconUrl, categoryId } = req.body;
-        if (!title || !url) {
-            return res.status(400).json({ error: 'Missing title or url' });
+        const { name } = req.body;
+        if (!name) {
+            return res.status(400).json({ error: 'Missing name' });
         }
 
-        const newSite: Website = {
+        const newCategory: Category = {
             id: randomUUID(),
-            title,
-            url,
-            description: description || '',
-            iconUrl: iconUrl || '',
-            status: 'unknown',
-            lastChecked: 0,
-            categoryId: categoryId // Storage will default if undefined
+            name: name
         };
 
-        storage.addWebsite(newSite);
-
-        return res.status(201).json(newSite);
+        storage.addCategory(newCategory);
+        return res.status(201).json(newCategory);
     }
 
     return res.status(405).json({ error: 'Method not allowed' });

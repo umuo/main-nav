@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { LayoutDashboard, Lock, LogIn, RefreshCcw, Wifi, WifiOff, Languages } from 'lucide-react';
-import { Website, ViewState } from '../types';
+import { Website, ViewState, Category } from '../types';
 import { getWebsites, saveWebsites, isAuthenticated, setAuthenticated } from '../services/storageService';
 import { CHECK_INTERVAL_MS } from '../constants';
 import { useTranslation } from '../contexts/LanguageContext';
@@ -13,6 +13,8 @@ export default function Home() {
   const { t, language, setLanguage } = useTranslation();
   const [view, setView] = useState<ViewState>('dashboard');
   const [websites, setWebsites] = useState<Website[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [selectedCategory, setSelectedCategory] = useState<string>('all');
 
   const [loginUsername, setLoginUsername] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
@@ -46,7 +48,20 @@ export default function Home() {
 
   useEffect(() => {
     fetchWebsites();
+    fetchCategories();
   }, []);
+
+  const fetchCategories = async () => {
+    try {
+      const res = await fetch('/api/categories');
+      if (res.ok) {
+        const data = await res.json();
+        setCategories(data);
+      }
+    } catch (e) {
+      console.error('Failed to fetch categories');
+    }
+  };
 
   const fetchWebsites = async () => {
     try {
@@ -62,6 +77,52 @@ export default function Home() {
       }
     } catch (error) {
       console.error('Failed to fetch websites', error);
+    }
+  };
+
+  const addCategory = async (name: string) => {
+    try {
+      const res = await fetch('/api/categories', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name })
+      });
+      if (res.ok) {
+        const newCat = await res.json();
+        setCategories([...categories, newCat]);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const updateCategory = async (id: string, name: string) => {
+    try {
+      const res = await fetch(`/api/categories/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name })
+      });
+      if (res.ok) {
+        setCategories(categories.map(c => c.id === id ? { ...c, name } : c));
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const deleteCategory = async (id: string) => {
+    try {
+      const res = await fetch(`/api/categories/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        setCategories(categories.filter(c => c.id !== id));
+        // Refresh sites as they might have been reassigned
+        fetchWebsites();
+      } else {
+        alert("Could not delete category (maybe it's the last one?)");
+      }
+    } catch (e) {
+      console.error(e);
     }
   };
 
@@ -175,7 +236,11 @@ export default function Home() {
       const res = await fetch(`/api/sites/${updatedSite.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: updatedSite.title, url: updatedSite.url })
+        body: JSON.stringify({
+          title: updatedSite.title,
+          url: updatedSite.url,
+          categoryId: updatedSite.categoryId
+        })
       });
 
       if (res.ok) {
@@ -205,6 +270,10 @@ export default function Home() {
 
   const onlineCount = websites.filter(w => w.status === 'online').length;
   const offlineCount = websites.filter(w => w.status === 'offline').length;
+
+  const filteredWebsites = selectedCategory === 'all'
+    ? websites
+    : websites.filter(w => w.categoryId === selectedCategory);
 
   return (
     <div className="min-h-screen flex flex-col font-sans transition-colors duration-500">
@@ -281,15 +350,42 @@ export default function Home() {
                 </button>
               </div>
 
+              {/* Category Filter */}
+              {categories.length > 0 && (
+                <div className="flex gap-2 overflow-x-auto pb-6 scrollbar-hide">
+                  <button
+                    onClick={() => setSelectedCategory('all')}
+                    className={`px-4 py-1.5 rounded-full text-sm font-medium transition-all whitespace-nowrap ${selectedCategory === 'all'
+                      ? 'bg-[var(--accent-color)] text-white shadow-lg shadow-pink-500/20'
+                      : 'bg-[var(--glass-bg)] text-[var(--text-secondary)] border border-[var(--glass-border)] hover:bg-[var(--glass-border)]'
+                      }`}
+                  >
+                    {t('dashboard.all')}
+                  </button>
+                  {categories.map(cat => (
+                    <button
+                      key={cat.id}
+                      onClick={() => setSelectedCategory(cat.id)}
+                      className={`px-4 py-1.5 rounded-full text-sm font-medium transition-all whitespace-nowrap ${selectedCategory === cat.id
+                        ? 'bg-[var(--accent-color)] text-white shadow-lg shadow-pink-500/20'
+                        : 'bg-[var(--glass-bg)] text-[var(--text-secondary)] border border-[var(--glass-border)] hover:bg-[var(--glass-border)]'
+                        }`}
+                    >
+                      {cat.id === 'default' ? t('dashboard.general') : cat.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                {websites.map(site => (
+                {filteredWebsites.map(site => (
                   <SiteCard
                     key={site.id}
                     site={site}
                     onRefreshOne={(id) => checkSingleSite(id)}
                   />
                 ))}
-                {websites.length === 0 && (
+                {filteredWebsites.length === 0 && (
                   <div className="col-span-full flex flex-col items-center justify-center p-12 text-center text-gray-400 glass-panel rounded-2xl border-dashed border-white/20">
                     <WifiOff size={48} className="mb-4 opacity-50" />
                     <p className="text-lg text-[var(--text-secondary)]">{t('dashboard.noSites')}</p>
@@ -371,22 +467,26 @@ export default function Home() {
             <div className="animate-fade-in">
               <AdminDashboard
                 websites={websites}
+                categories={categories}
                 onAdd={addWebsite}
                 onEdit={editWebsite}
                 onDelete={deleteWebsite}
+                onAddCategory={addCategory}
+                onUpdateCategory={updateCategory}
+                onDeleteCategory={deleteCategory}
                 onLogout={handleLogout}
               />
             </div>
           )}
 
         </div>
-      </main>
+      </main >
 
       <footer className="border-t border-white/10 py-8 bg-black/10 backdrop-blur-sm">
         <div className="max-w-7xl mx-auto px-4 text-center text-sm text-[var(--text-secondary)]">
           <p>&copy; {new Date().getFullYear()} {t('dashboard.footer')}</p>
         </div>
       </footer>
-    </div>
+    </div >
   );
 }

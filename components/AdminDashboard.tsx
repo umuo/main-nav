@@ -1,34 +1,58 @@
 import React, { useState } from 'react';
-import { Plus, Trash2, Edit2, X, Save, Search, LogOut, Palette, Download, Upload } from 'lucide-react';
-import { Website } from '../types';
+import { Plus, Trash2, Edit2, X, Save, Search, LogOut, Palette, Download, Upload, Folder, Layers } from 'lucide-react';
+import { Website, Category } from '../types';
 import { useTranslation } from '../contexts/LanguageContext';
 import { useTheme, Theme } from '../contexts/ThemeContext';
 
 interface AdminDashboardProps {
   websites: Website[];
+  categories: Category[];
   onAdd: (site: Omit<Website, 'id' | 'status' | 'lastChecked'>) => void;
   onEdit: (site: Website) => void;
   onDelete: (id: string) => void;
+  onAddCategory: (name: string) => Promise<void>;
+  onUpdateCategory: (id: string, name: string) => Promise<void>;
+  onDeleteCategory: (id: string) => Promise<void>;
   onLogout: () => void;
 }
 
-const AdminDashboard: React.FC<AdminDashboardProps> = ({ websites, onAdd, onEdit, onDelete, onLogout }) => {
+const AdminDashboard: React.FC<AdminDashboardProps> = ({
+  websites,
+  categories,
+  onAdd,
+  onEdit,
+  onDelete,
+  onAddCategory,
+  onUpdateCategory,
+  onDeleteCategory,
+  onLogout
+}) => {
   const { t } = useTranslation();
   const { theme, setTheme } = useTheme();
+
+  // Website Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  // Category Modal State
+  const [isCategoryManagerOpen, setIsCategoryManagerOpen] = useState(false);
+  const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
+  const [categoryName, setCategoryName] = useState('');
 
   // Form State
   const [title, setTitle] = useState('');
   const [url, setUrl] = useState('https://');
   const [description, setDescription] = useState('');
+  const [selectedCategoryId, setSelectedCategoryId] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
 
   const resetForm = () => {
     setTitle('');
     setUrl('https://');
     setDescription('');
+    // Default to first category
+    if (categories.length > 0) setSelectedCategoryId(categories[0].id);
     setEditingId(null);
   };
 
@@ -41,6 +65,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ websites, onAdd, onEdit
     setTitle(site.title);
     setUrl(site.url);
     setDescription(site.description || '');
+    setSelectedCategoryId(site.categoryId || (categories[0]?.id || ''));
     setEditingId(site.id);
     setIsModalOpen(true);
   };
@@ -62,22 +87,51 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ websites, onAdd, onEdit
           ...existing,
           title,
           url: formattedUrl,
-          description
+          description,
+          categoryId: selectedCategoryId
         });
       }
     } else {
       onAdd({
         title,
         url: formattedUrl,
-        description
+        description,
+        categoryId: selectedCategoryId
       });
     }
     setIsModalOpen(false);
     resetForm();
   };
 
+  const handleCategorySubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!categoryName.trim()) return;
+
+    if (editingCategoryId) {
+      await onUpdateCategory(editingCategoryId, categoryName);
+    } else {
+      await onAddCategory(categoryName);
+    }
+    setCategoryName('');
+    setEditingCategoryId(null);
+  };
+
+  const startEditCategory = (cat: Category) => {
+    setCategoryName(cat.name);
+    setEditingCategoryId(cat.id);
+  };
+
+  const cancelEditCategory = () => {
+    setCategoryName('');
+    setEditingCategoryId(null);
+  };
+
   const handleExport = () => {
-    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(websites, null, 2));
+    const exportData = websites.map(site => ({
+      ...site,
+      categoryName: categories.find(c => c.id === site.categoryId)?.name || 'General'
+    }));
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(exportData, null, 2));
     const downloadAnchorNode = document.createElement('a');
     downloadAnchorNode.setAttribute("href", dataStr);
     downloadAnchorNode.setAttribute("download", "websites.json");
@@ -105,7 +159,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ websites, onAdd, onEdit
           title: site.title,
           url: site.url,
           description: site.description,
-          iconUrl: site.iconUrl
+          iconUrl: site.iconUrl,
+          categoryId: site.categoryId // valid if importing from same system
         }));
 
         const res = await fetch('/api/sites/import', {
@@ -145,217 +200,301 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ websites, onAdd, onEdit
   return (
     <div className="space-y-6">
       {/* Settings Panel */}
-      <div className="glass-panel p-6 rounded-xl">
-        <h3 className="text-lg font-bold text-[var(--text-primary)] mb-4 flex items-center gap-2">
-          <Palette size={20} />
-          Appearance
-        </h3>
-        <div className="flex gap-4">
-          {themes.map((t) => (
-            <button
-              key={t.id}
-              onClick={() => setTheme(t.id)}
-              className={`flex flex-col items-center gap-2 transition-transform hover:scale-105 ${theme === t.id ? 'ring-2 ring-[var(--text-primary)] rounded-lg p-1' : ''}`}
-            >
-              <div className={`w-12 h-12 rounded-lg shadow-lg border border-[var(--text-secondary)] ${t.color}`}></div>
-              <span className="text-xs text-[var(--text-secondary)] font-medium">{t.name}</span>
-            </button>
-          ))}
+      <div className="glass-panel p-6 rounded-xl flex flex-col md:flex-row gap-6 md:items-center justify-between">
+        <div>
+          <h3 className="text-lg font-bold text-[var(--text-primary)] mb-4 flex items-center gap-2">
+            <Palette size={20} />
+            Appearance
+          </h3>
+          <div className="flex gap-4">
+            {themes.map((t) => (
+              <button
+                key={t.id}
+                onClick={() => setTheme(t.id)}
+                className={`flex flex-col items-center gap-2 transition-transform hover:scale-105 ${theme === t.id ? 'ring-2 ring-[var(--text-primary)] rounded-lg p-1' : ''}`}
+              >
+                <div className={`w-12 h-12 rounded-lg shadow-lg border border-[var(--text-secondary)] ${t.color}`}></div>
+                <span className="text-xs text-[var(--text-secondary)] font-medium">{t.name}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex gap-2 mt-4 md:mt-0">
+          <button
+            onClick={() => setIsCategoryManagerOpen(true)}
+            className="flex items-center gap-2 px-4 py-2 glass-panel text-[var(--text-primary)] rounded-lg hover:bg-white/10 transition-colors text-sm font-medium"
+          >
+            <Folder size={18} />
+            {t('admin.manageCategories')}
+          </button>
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={handleImport}
+            className="hidden"
+            accept=".json"
+          />
+          <button
+            onClick={handleImportClick}
+            className="flex items-center gap-2 px-4 py-2 glass-panel text-[var(--text-primary)] rounded-lg hover:bg-white/10 transition-colors text-sm font-medium"
+            title={t('admin.import')}
+          >
+            <Upload size={18} />
+          </button>
+          <button
+            onClick={handleExport}
+            className="flex items-center gap-2 px-4 py-2 glass-panel text-[var(--text-primary)] rounded-lg hover:bg-white/10 transition-colors text-sm font-medium"
+            title={t('admin.export')}
+          >
+            <Download size={18} />
+          </button>
+          <button
+            onClick={onLogout}
+            className="flex items-center gap-2 px-4 py-2 bg-red-500/10 text-red-500 border border-red-500/20 rounded-lg hover:bg-red-500/20 transition-colors text-sm font-medium"
+            title={t('admin.logout')}
+          >
+            <LogOut size={18} />
+          </button>
         </div>
       </div>
 
-      <div className="glass-panel rounded-xl overflow-hidden">
-        <div className="p-6 border-b border-[var(--glass-border)] flex flex-col md:flex-row justify-between items-center gap-4 bg-[var(--glass-bg)]">
-          <div>
-            <h2 className="text-xl font-bold text-[var(--text-primary)]">{t('admin.title')}</h2>
-            <p className="text-sm text-[var(--text-secondary)]">{t('admin.subtitle')}</p>
-          </div>
-          <div className="flex items-center gap-3 w-full md:w-auto">
-            {/* Hidden Input */}
-            <input
-              type="file"
-              ref={fileInputRef}
-              className="hidden"
-              accept=".json"
-              onChange={handleImport}
-            />
-
-            <div className="relative flex-grow md:flex-grow-0">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-[var(--text-secondary)]" size={18} />
-              <input
-                type="text"
-                placeholder={t('admin.searchPlaceholder')}
-                className="pl-10 pr-4 py-2 bg-[var(--glass-border)] border border-[var(--glass-border)] rounded-lg text-sm text-[var(--text-primary)] focus:ring-2 focus:ring-pink-500 focus:border-transparent w-full placeholder-[var(--text-secondary)] outline-none"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
-            </div>
-
-            <button
-              onClick={handleExport}
-              className="p-2 text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--glass-border)] rounded-lg transition-colors border border-[var(--glass-border)]"
-              title={t('admin.export')}
-            >
-              <Download size={20} />
-            </button>
-
-            <button
-              onClick={handleImportClick}
-              className="p-2 text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--glass-border)] rounded-lg transition-colors border border-[var(--glass-border)]"
-              title={t('admin.import')}
-            >
-              <Upload size={20} />
-            </button>
-
-            <button
-              onClick={handleOpenAdd}
-              className="flex items-center gap-2 bg-pink-600 hover:bg-pink-700 text-white px-4 py-2 rounded-lg transition-colors text-sm font-medium shadow-lg hover:shadow-pink-500/30 whitespace-nowrap"
-            >
-              <Plus size={18} />
-              {t('admin.addNew')}
-            </button>
-            <button
-              onClick={onLogout}
-              className="p-2 text-[var(--text-secondary)] hover:text-red-400 hover:bg-[var(--glass-border)] rounded-lg transition-colors"
-              title={t('admin.logout')}
-            >
-              <LogOut size={20} />
-            </button>
-          </div>
+      {/* Action Bar */}
+      <div className="flex flex-col md:flex-row gap-4 justify-between items-center">
+        <div className="relative w-full md:w-96 group">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-secondary)] group-focus-within:text-[var(--accent-color)] transition-colors" size={20} />
+          <input
+            type="text"
+            placeholder={t('admin.searchPlaceholder')}
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full pl-10 pr-4 py-3 glass-panel rounded-xl text-[var(--text-primary)] placeholder-gray-500 focus:ring-2 focus:ring-[var(--accent-color)] outline-none transition-all"
+          />
         </div>
+        <button
+          onClick={handleOpenAdd}
+          className="w-full md:w-auto flex items-center justify-center gap-2 bg-[var(--accent-color)] text-white px-6 py-3 rounded-xl hover:opacity-90 transition-all font-semibold shadow-lg shadow-pink-500/20"
+        >
+          <Plus size={20} />
+          {t('admin.addWebsite')}
+        </button>
+      </div>
 
+      {/* Website Table */}
+      <div className="glass-panel overflow-hidden rounded-2xl border border-white/10">
         <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
+          <table className="w-full text-left">
             <thead>
-              <tr className="bg-[var(--glass-bg)] border-b border-[var(--glass-border)] text-xs uppercase text-[var(--text-secondary)] font-semibold tracking-wider">
-                <th className="px-6 py-4">{t('admin.table.website')}</th>
-                <th className="px-6 py-4 hidden sm:table-cell">{t('admin.table.url')}</th>
-                <th className="px-6 py-4 hidden md:table-cell">{t('admin.table.status')}</th>
-                <th className="px-6 py-4 text-right">{t('admin.table.actions')}</th>
+              <tr className="border-b border-white/10 bg-white/5">
+                <th className="px-6 py-4 font-semibold text-[var(--text-primary)]">{t('admin.table.title')}</th>
+                <th className="px-6 py-4 font-semibold text-[var(--text-primary)] hidden sm:table-cell">{t('admin.table.url')}</th>
+                <th className="px-6 py-4 font-semibold text-[var(--text-primary)] hidden md:table-cell">{t('admin.table.category')}</th>
+                <th className="px-6 py-4 font-semibold text-[var(--text-primary)] text-right">{t('admin.table.actions')}</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[var(--glass-border)]">
-              {filteredSites.length === 0 ? (
-                <tr>
-                  <td colSpan={4} className="px-6 py-8 text-center text-[var(--text-secondary)]">
-                    {t('admin.table.empty')}
+            <tbody className="divide-y divide-white/5">
+              {filteredSites.map(site => (
+                <tr key={site.id} className="hover:bg-white/5 transition-colors">
+                  <td className="px-6 py-4">
+                    <div className="font-medium text-[var(--text-primary)]">{site.title}</div>
+                    <div className="text-xs text-[var(--text-secondary)] sm:hidden truncate max-w-[150px]">{site.url}</div>
+                  </td>
+                  <td className="px-6 py-4 text-sm text-[var(--text-secondary)] hidden sm:table-cell truncate max-w-[200px]">
+                    {site.url}
+                  </td>
+                  <td className="px-6 py-4 text-sm text-[var(--text-secondary)] hidden md:table-cell">
+                    {categories.find(c => c.id === site.categoryId)?.name || t('dashboard.general')}
+                  </td>
+                  <td className="px-6 py-4 text-right">
+                    <div className="flex items-center justify-end gap-2">
+                      <button
+                        onClick={() => handleOpenEdit(site)}
+                        className="p-2 text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-white/10 rounded-lg transition-colors"
+                        title={t('admin.edit')}
+                      >
+                        <Edit2 size={18} />
+                      </button>
+                      <button
+                        onClick={() => onDelete(site.id)}
+                        className="p-2 text-[var(--text-secondary)] hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
+                        title={t('admin.delete')}
+                      >
+                        <Trash2 size={18} />
+                      </button>
+                    </div>
                   </td>
                 </tr>
-              ) : (
-                filteredSites.map(site => (
-                  <tr key={site.id} className="hover:bg-[var(--glass-border)] transition-colors">
-                    <td className="px-6 py-4">
-                      <div className="font-medium text-[var(--text-primary)]">{site.title}</div>
-                      <div className="text-xs text-[var(--text-secondary)] md:hidden">{site.url}</div>
-                    </td>
-                    <td className="px-6 py-4 text-sm text-[var(--text-secondary)] hidden sm:table-cell truncate max-w-xs">
-                      {site.url}
-                    </td>
-                    <td className="px-6 py-4 hidden md:table-cell">
-                      <span
-                        className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium capitalize border"
-                        style={{
-                          backgroundColor: `var(--status-${site.status === 'unknown' ? 'checking' : site.status}-bg)`,
-                          color: `var(--status-${site.status === 'unknown' ? 'checking' : site.status}-text)`,
-                          borderColor: `var(--status-${site.status === 'unknown' ? 'checking' : site.status}-border)`
-                        }}
-                      >
-                        {t(`status.${site.status}`)}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <button
-                          onClick={() => handleOpenEdit(site)}
-                          className="p-1.5 text-blue-400 hover:text-blue-300 hover:bg-[var(--glass-border)] rounded transition-colors"
-                          title={t('admin.modal.editTitle')}
-                        >
-                          <Edit2 size={16} />
-                        </button>
-                        <button
-                          onClick={() => onDelete(site.id)}
-                          className="p-1.5 text-red-400 hover:text-red-300 hover:bg-[var(--glass-border)] rounded transition-colors"
-                          title={t('admin.modal.delete')}
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
+              ))}
+              {filteredSites.length === 0 && (
+                <tr>
+                  <td colSpan={4} className="px-6 py-12 text-center text-[var(--text-secondary)]">
+                    {t('admin.noSitesFound')}
+                  </td>
+                </tr>
               )}
             </tbody>
           </table>
         </div>
       </div>
 
-      {/* Modal */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
-          <div className="glass-panel rounded-xl shadow-2xl w-full max-w-md overflow-hidden transform transition-all bg-[var(--bg-gradient)] border border-[var(--glass-border)]">
-            <div className="px-6 py-4 border-b border-[var(--glass-border)] flex justify-between items-center bg-[var(--glass-bg)]">
-              <h3 className="text-lg font-bold text-[var(--text-primary)]">{editingId ? t('admin.modal.editTitle') : t('admin.modal.addTitle')}</h3>
-              <button onClick={() => setIsModalOpen(false)} className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors">
-                <X size={20} />
+      {/* Website Edit/Add Modal */}
+      {
+        isModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+            <div className="glass-panel w-full max-w-lg rounded-2xl p-6 relative animate-slide-up border border-white/20 shadow-2xl">
+              <button
+                onClick={() => setIsModalOpen(false)}
+                className="absolute top-4 right-4 text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
+              >
+                <X size={24} />
               </button>
+              <h3 className="text-xl font-bold text-[var(--text-primary)] mb-6">
+                {editingId ? t('admin.modal.editTitle') : t('admin.modal.addTitle')}
+              </h3>
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-[var(--text-secondary)] mb-1">{t('admin.modal.titleLabel')}</label>
+                  <input
+                    type="text"
+                    required
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    className="w-full px-4 py-2 bg-black/20 border border-white/10 rounded-xl text-[var(--text-primary)] focus:ring-2 focus:ring-[var(--accent-color)] outline-none"
+                    placeholder={t('admin.modal.titlePlaceholder')}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-[var(--text-secondary)] mb-1">{t('admin.modal.urlLabel')}</label>
+                  <input
+                    type="text"
+                    required
+                    value={url}
+                    onChange={(e) => setUrl(e.target.value)}
+                    className="w-full px-4 py-2 bg-black/20 border border-white/10 rounded-xl text-[var(--text-primary)] focus:ring-2 focus:ring-[var(--accent-color)] outline-none"
+                    placeholder="https://example.com"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-[var(--text-secondary)] mb-1">{t('admin.modal.categoryLabel')}</label>
+                  <select
+                    value={selectedCategoryId}
+                    onChange={(e) => setSelectedCategoryId(e.target.value)}
+                    className="w-full px-4 py-2 bg-black/20 border border-white/10 rounded-xl text-[var(--text-primary)] focus:ring-2 focus:ring-[var(--accent-color)] outline-none [&>option]:bg-gray-900"
+                  >
+                    {categories.map(cat => (
+                      <option key={cat.id} value={cat.id}>
+                        {cat.id === 'default' ? t('dashboard.general') : cat.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-[var(--text-secondary)] mb-1">{t('admin.modal.descLabel')}</label>
+                  <textarea
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    className="w-full px-4 py-2 bg-black/20 border border-white/10 rounded-xl text-[var(--text-primary)] focus:ring-2 focus:ring-[var(--accent-color)] outline-none h-24 resize-none"
+                    placeholder={t('admin.modal.descPlaceholder')}
+                  />
+                </div>
+                <div className="flex justify-end gap-3 pt-4">
+                  <button
+                    type="button"
+                    onClick={() => setIsModalOpen(false)}
+                    className="px-4 py-2 text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
+                  >
+                    {t('admin.modal.cancel')}
+                  </button>
+                  <button
+                    type="submit"
+                    className="bg-[var(--accent-color)] text-white px-6 py-2 rounded-xl hover:opacity-90 transition-all font-medium flex items-center gap-2"
+                  >
+                    <Save size={18} />
+                    {t('admin.modal.save')}
+                  </button>
+                </div>
+              </form>
             </div>
-
-            <form onSubmit={handleSubmit} className="p-6 space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-[var(--text-secondary)] mb-1">{t('admin.modal.titleLabel')}</label>
-                <input
-                  type="text"
-                  required
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  className="w-full px-3 py-2 bg-[var(--glass-border)] border border-[var(--glass-border)] rounded-lg text-[var(--text-primary)] focus:ring-2 focus:ring-pink-500 focus:border-transparent outline-none transition-all placeholder-[var(--text-secondary)]"
-                  placeholder={t('admin.modal.placeholderTitle')}
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-[var(--text-secondary)] mb-1">{t('admin.modal.urlLabel')}</label>
-                <input
-                  type="text"
-                  required
-                  value={url}
-                  onChange={(e) => setUrl(e.target.value)}
-                  className="w-full px-3 py-2 bg-[var(--glass-border)] border border-[var(--glass-border)] rounded-lg text-[var(--text-primary)] focus:ring-2 focus:ring-pink-500 focus:border-transparent outline-none transition-all placeholder-[var(--text-secondary)]"
-                  placeholder={t('admin.modal.placeholderUrl')}
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-[var(--text-secondary)] mb-1">{t('admin.modal.descLabel')}</label>
-                <textarea
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  className="w-full px-3 py-2 bg-[var(--glass-border)] border border-[var(--glass-border)] rounded-lg text-[var(--text-primary)] focus:ring-2 focus:ring-pink-500 focus:border-transparent outline-none transition-all h-24 resize-none placeholder-[var(--text-secondary)]"
-                  placeholder={t('admin.modal.placeholderDesc')}
-                />
-              </div>
-
-              <div className="pt-2 flex justify-end gap-3">
-                <button
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 text-[var(--text-secondary)] hover:bg-[var(--glass-border)] rounded-lg transition-colors font-medium border border-[var(--glass-border)]"
-                >
-                  {t('admin.modal.cancel')}
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-pink-600 text-white rounded-lg hover:bg-pink-700 transition-colors font-medium flex items-center gap-2 shadow-lg shadow-pink-900/40"
-                >
-                  <Save size={18} />
-                  {editingId ? t('admin.modal.update') : t('admin.modal.create')}
-                </button>
-              </div>
-            </form>
           </div>
-        </div>
-      )}
-    </div>
+        )
+      }
+
+      {/* Category Manager Modal */}
+      {
+        isCategoryManagerOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+            <div className="glass-panel w-full max-w-md rounded-2xl p-6 relative animate-slide-up border border-white/20 shadow-2xl">
+              <button
+                onClick={() => setIsCategoryManagerOpen(false)}
+                className="absolute top-4 right-4 text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
+              >
+                <X size={24} />
+              </button>
+              <h3 className="text-lg font-bold text-[var(--text-primary)] mb-6">{t('admin.categoryModal.title')}</h3>
+
+              <form onSubmit={handleCategorySubmit} className="mb-6 flex gap-2">
+                <input
+                  type="text"
+                  value={categoryName}
+                  onChange={(e) => setCategoryName(e.target.value)}
+                  placeholder={t('admin.categoryModal.namePlaceholder')}
+                  className="flex-1 px-4 py-2 bg-black/20 border border-white/10 rounded-xl text-[var(--text-primary)] focus:ring-2 focus:ring-[var(--accent-color)] outline-none"
+                />
+                {editingCategoryId ? (
+                  <>
+                    <button
+                      type="submit"
+                      className="p-2 bg-[var(--accent-color)] text-white rounded-xl hover:opacity-90 transition-all"
+                    >
+                      <Save size={20} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={cancelEditCategory}
+                      className="p-2 bg-white/10 text-[var(--text-primary)] rounded-xl hover:bg-white/20 transition-all"
+                    >
+                      <X size={20} />
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    type="submit"
+                    disabled={!categoryName.trim()}
+                    className="p-2 bg-[var(--accent-color)] text-white rounded-xl hover:opacity-90 transition-all disabled:opacity-50"
+                  >
+                    <Plus size={20} />
+                  </button>
+                )}
+              </form>
+
+              <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
+                {categories.map(cat => (
+                  <div key={cat.id} className="flex items-center justify-between p-3 bg-white/5 rounded-xl border border-white/5 group hover:border-[var(--glass-border)] transition-colors">
+                    <span className="font-medium text-[var(--text-primary)]">{cat.id === 'default' ? t('dashboard.general') : cat.name}</span>
+                    {cat.id !== 'default' && (
+                      <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button
+                          onClick={() => startEditCategory(cat)}
+                          className="p-1.5 text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-white/10 rounded-lg transition-colors"
+                        >
+                          <Edit2 size={14} />
+                        </button>
+                        <button
+                          onClick={() => onDeleteCategory(cat.id)}
+                          className="p-1.5 text-[var(--text-secondary)] hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )
+      }
+    </div >
   );
 };
 
