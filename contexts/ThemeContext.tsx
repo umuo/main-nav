@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 
-export type Theme = 'vibe' | 'sunset' | 'ocean' | 'minimal';
+import { Theme } from '../types';
 
 interface ThemeContextType {
     theme: Theme;

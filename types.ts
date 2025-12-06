@@ -24,6 +24,8 @@ export type ViewState = 'dashboard' | 'login' | 'admin';
 
 export type Language = 'zh' | 'en';
 
+export type Theme = 'vibe' | 'sunset' | 'ocean' | 'minimal';
+
 export interface ToastMessage {
   id: string;
   type: 'success' | 'error' | 'info';
