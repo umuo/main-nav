@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { Plus, Trash2, Edit2, X, Save, Search, LogOut, Palette, Download, Upload, Folder, Layers } from 'lucide-react';
-import { Website, Category } from '../types';
+import { Website, Category, Theme } from '../types';
 import { useTranslation } from '../contexts/LanguageContext';
-import { useTheme, Theme } from '../contexts/ThemeContext';
+import { useTheme } from '../contexts/ThemeContext';
 
 interface AdminDashboardProps {
   websites: Website[];
