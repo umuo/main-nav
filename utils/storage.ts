@@ -1,145 +1,56 @@
 import { Website, Theme, Category } from '../types';
-import { kv } from '@vercel/kv';
+import { put, list } from '@vercel/blob';
 import fs from 'fs/promises';
 import path from 'path';
 
-// Storage Interface
-interface DataStore {
-    getWebsites(): Promise<Website[]>;
-    addWebsite(site: Website): Promise<Website>;
-    updateWebsite(id: string, updates: Partial<Website>): Promise<boolean>;
-    deleteWebsite(id: string): Promise<boolean>;
-
-    getCategories(): Promise<Category[]>;
-    addCategory(category: Category): Promise<Category>;
-    updateCategory(id: string, name: string): Promise<boolean>;
-    deleteCategory(id: string): Promise<boolean>;
-
-    getTheme(): Promise<Theme>;
-    setTheme(theme: Theme): Promise<void>;
+// --- Data Structure ---
+interface DbSchema {
+    websites: Website[];
+    categories: Category[];
+    config: {
+        theme: Theme;
+    };
 }
 
-// --- Vercel KV Implementation ---
-class VercelKVStore implements DataStore {
-    async getWebsites(): Promise<Website[]> {
-        const sites = await kv.hgetall<Record<string, Website>>('websites');
-        return sites ? Object.values(sites) : [];
-    }
+const DEFAULT_DB: DbSchema = {
+    websites: [],
+    categories: [{ id: 'default', name: 'General' }],
+    config: { theme: 'minimal' }
+};
 
-    async addWebsite(site: Website): Promise<Website> {
-        // Default category logic should be handled by business logic, but we can check here too if needed.
-        // For simplicity, we assume the caller handles defaults, or we do a quick check.
-        if (!site.categoryId) {
-            const categories = await this.getCategories();
-            if (categories.length > 0) site.categoryId = categories[0].id;
+// --- Abstract JSON Store ---
+abstract class JsonDbStore {
+    protected memoryCache: DbSchema | null = null;
+    protected lastFetch: number = 0;
+    protected CACHE_TTL = 1000 * 60; // 1 minute cache for read (optional optimization, strict consistent for now = 0)
+
+    // Abstract methods to be implemented by adapters
+    protected abstract loadRaw(): Promise<DbSchema | null>;
+    protected abstract saveRaw(data: DbSchema): Promise<void>;
+
+    private async ensureData(): Promise<DbSchema> {
+        // Simple caching strategy: Always fetch fresh for now to avoid consistency issues in serverless
+        // In a high traffic app, we'd need better locking or accept checking staleness.
+        // Given this is a personal usage app, fetching every time is safer.
+
+        const data = await this.loadRaw();
+        if (data) {
+            this.memoryCache = data;
+        } else {
+            // Init new DB
+            this.memoryCache = JSON.parse(JSON.stringify(DEFAULT_DB));
+            await this.saveRaw(this.memoryCache!);
         }
-        await kv.hset('websites', { [site.id]: site });
-        return site;
-    }
-
-    async updateWebsite(id: string, updates: Partial<Website>): Promise<boolean> {
-        const site = await kv.hget<Website>('websites', id);
-        if (site) {
-            const updatedSite = { ...site, ...updates };
-            await kv.hset('websites', { [id]: updatedSite });
-            return true;
-        }
-        return false;
-    }
-
-    async deleteWebsite(id: string): Promise<boolean> {
-        const result = await kv.hdel('websites', id);
-        return result > 0;
-    }
-
-    async getCategories(): Promise<Category[]> {
-        const categories = await kv.hgetall<Record<string, Category>>('categories');
-        // If empty, return default
-        if (!categories || Object.keys(categories).length === 0) {
-            return [{ id: 'default', name: 'General' }];
-        }
-        return Object.values(categories);
-    }
-
-    async addCategory(category: Category): Promise<Category> {
-        await kv.hset('categories', { [category.id]: category });
-        return category;
-    }
-
-    async updateCategory(id: string, name: string): Promise<boolean> {
-        const category = await kv.hget<Category>('categories', id);
-        if (category) {
-            category.name = name;
-            await kv.hset('categories', { [id]: category });
-            return true;
-        }
-        return false;
-    }
-
-    async deleteCategory(id: string): Promise<boolean> {
-        // Check count
-        const categories = await this.getCategories();
-        if (categories.length <= 1) return false;
-
-        await kv.hdel('categories', id);
-
-        // Re-assign sites
-        // This is expensive in KV (fetch all, filter, update).
-        // For now, let's just do it.
-        const sites = await this.getWebsites();
-        const fallbackId = categories.find(c => c.id !== id)?.id || 'default';
-
-        for (const site of sites) {
-            if (site.categoryId === id) {
-                site.categoryId = fallbackId;
-                await kv.hset('websites', { [site.id]: site });
-            }
-        }
-        return true;
-    }
-
-    async getTheme(): Promise<Theme> {
-        return (await kv.get<Theme>('config:theme')) || 'minimal';
-    }
-
-    async setTheme(theme: Theme): Promise<void> {
-        await kv.set('config:theme', theme);
-    }
-}
-
-// --- Local File Implementation ---
-class FileStore implements DataStore {
-    private filePath = path.join(process.cwd(), 'data', 'db.json');
-    private memoryCache: any = null;
-
-    private async ensureData() {
-        if (this.memoryCache) return this.memoryCache;
-
-        try {
-            const data = await fs.readFile(this.filePath, 'utf-8');
-            this.memoryCache = JSON.parse(data);
-        } catch (error) {
-            // File doesn't exist or is invalid, init defaults
-            this.memoryCache = {
-                websites: [],
-                categories: [{ id: 'default', name: 'General' }],
-                config: { theme: 'minimal' }
-            };
-            await this.saveData();
-        }
-        return this.memoryCache;
+        return this.memoryCache!;
     }
 
     private async saveData() {
-        const dir = path.dirname(this.filePath);
-        try {
-            await fs.access(dir);
-        } catch {
-            await fs.mkdir(dir, { recursive: true });
+        if (this.memoryCache) {
+            await this.saveRaw(this.memoryCache);
         }
-        await fs.writeFile(this.filePath, JSON.stringify(this.memoryCache, null, 2));
     }
 
+    // Public Interface Implementation
     async getWebsites(): Promise<Website[]> {
         const db = await this.ensureData();
         return db.websites;
@@ -157,7 +68,7 @@ class FileStore implements DataStore {
 
     async updateWebsite(id: string, updates: Partial<Website>): Promise<boolean> {
         const db = await this.ensureData();
-        const index = db.websites.findIndex((w: Website) => w.id === id);
+        const index = db.websites.findIndex(w => w.id === id);
         if (index !== -1) {
             db.websites[index] = { ...db.websites[index], ...updates };
             await this.saveData();
@@ -169,7 +80,7 @@ class FileStore implements DataStore {
     async deleteWebsite(id: string): Promise<boolean> {
         const db = await this.ensureData();
         const initialLen = db.websites.length;
-        db.websites = db.websites.filter((w: Website) => w.id !== id);
+        db.websites = db.websites.filter(w => w.id !== id);
         if (db.websites.length < initialLen) {
             await this.saveData();
             return true;
@@ -191,7 +102,7 @@ class FileStore implements DataStore {
 
     async updateCategory(id: string, name: string): Promise<boolean> {
         const db = await this.ensureData();
-        const category = db.categories.find((c: Category) => c.id === id);
+        const category = db.categories.find(c => c.id === id);
         if (category) {
             category.name = name;
             await this.saveData();
@@ -204,10 +115,10 @@ class FileStore implements DataStore {
         const db = await this.ensureData();
         if (db.categories.length <= 1) return false;
 
-        db.categories = db.categories.filter((c: Category) => c.id !== id);
+        db.categories = db.categories.filter(c => c.id !== id);
 
         const fallbackId = db.categories[0].id;
-        db.websites.forEach((w: Website) => {
+        db.websites.forEach(w => {
             if (w.categoryId === id) w.categoryId = fallbackId;
         });
 
@@ -222,14 +133,82 @@ class FileStore implements DataStore {
 
     async setTheme(theme: Theme): Promise<void> {
         const db = await this.ensureData();
-        if (!db.config) db.config = {};
+        if (!db.config) db.config = { theme: 'minimal' };
         db.config.theme = theme;
         await this.saveData();
     }
 }
 
-// --- Factory ---
-const isVercelKVEnabled = !!process.env.KV_REST_API_URL;
-console.log('[Storage] Using adapter:', isVercelKVEnabled ? 'Vercel KV' : 'Local File');
+// --- Vercel Blob Implementation ---
+// Stores data in a single 'db.json' file in the blob store.
+class VercelBlobStore extends JsonDbStore {
+    private fileName = 'db.json';
 
-export const storage: DataStore = isVercelKVEnabled ? new VercelKVStore() : new FileStore();
+    protected async loadRaw(): Promise<DbSchema | null> {
+        try {
+            // 1. List files to find our db.json
+            const { blobs } = await list({ limit: 1, prefix: this.fileName });
+            const blob = blobs.find(b => b.pathname === this.fileName);
+
+            if (!blob) return null;
+
+            // 2. Fetch content
+            const response = await fetch(blob.url);
+            if (!response.ok) throw new Error('Failed to fetch DB');
+
+            return await response.json();
+        } catch (error) {
+            console.error('Blob load error:', error);
+            return null;
+        }
+    }
+
+    protected async saveRaw(data: DbSchema): Promise<void> {
+        try {
+            // Overwrite the file. 
+            // access: 'public' is required for simple download, but means anyone can read if they guess URL.
+            // For a private app, this is "okay" if URL is secret, but technically 'public' blobs are public.
+            // Ideally we'd use private if Vercel Blob supported it easily for server-side reading without token hassle, 
+            // but 'public' is standard for vercel/blob currently unless configured otherwise.
+            await put(this.fileName, JSON.stringify(data), {
+                access: 'public',
+                addRandomSuffix: false // Crucial: Keep the name constant!
+            });
+        } catch (error) {
+            console.error('Blob save error:', error);
+            throw error;
+        }
+    }
+}
+
+// --- Local File Implementation ---
+class FileStore extends JsonDbStore {
+    private filePath = path.join(process.cwd(), 'data', 'db.json');
+
+    protected async loadRaw(): Promise<DbSchema | null> {
+        try {
+            const data = await fs.readFile(this.filePath, 'utf-8');
+            return JSON.parse(data);
+        } catch {
+            return null;
+        }
+    }
+
+    protected async saveRaw(data: DbSchema): Promise<void> {
+        const dir = path.dirname(this.filePath);
+        try {
+            await fs.access(dir);
+        } catch {
+            await fs.mkdir(dir, { recursive: true });
+        }
+        await fs.writeFile(this.filePath, JSON.stringify(data, null, 2));
+    }
+}
+
+// --- Factory ---
+// Use Blob if BLOB_READ_WRITE_TOKEN is present (Vercel standard env), otherwise local file.
+// Note: User can explicitly fallback to file by not setting the token locally.
+const isBlobEnabled = !!process.env.BLOB_READ_WRITE_TOKEN;
+console.log('[Storage] Using adapter:', isBlobEnabled ? 'Vercel Blob' : 'Local File');
+
+export const storage = isBlobEnabled ? new VercelBlobStore() : new FileStore();
