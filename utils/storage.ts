@@ -143,11 +143,16 @@ abstract class JsonDbStore {
 // Stores data in a single 'db.json' file in the blob store.
 class VercelBlobStore extends JsonDbStore {
     private fileName = 'db.json';
+    private token = process.env.BLOB_READ_WRITE_TOKEN || process.env.nav_READ_WRITE_TOKEN;
 
     protected async loadRaw(): Promise<DbSchema | null> {
         try {
             // 1. List files to find our db.json
-            const { blobs } = await list({ limit: 1, prefix: this.fileName });
+            const { blobs } = await list({
+                limit: 1,
+                prefix: this.fileName,
+                token: this.token
+            });
             const blob = blobs.find(b => b.pathname === this.fileName);
 
             if (!blob) return null;
@@ -172,7 +177,8 @@ class VercelBlobStore extends JsonDbStore {
             // but 'public' is standard for vercel/blob currently unless configured otherwise.
             await put(this.fileName, JSON.stringify(data), {
                 access: 'public',
-                addRandomSuffix: false // Crucial: Keep the name constant!
+                addRandomSuffix: false, // Crucial: Keep the name constant!
+                token: this.token
             });
         } catch (error) {
             console.error('Blob save error:', error);
@@ -208,7 +214,7 @@ class FileStore extends JsonDbStore {
 // --- Factory ---
 // Use Blob if BLOB_READ_WRITE_TOKEN is present (Vercel standard env), otherwise local file.
 // Note: User can explicitly fallback to file by not setting the token locally.
-const isBlobEnabled = !!process.env.BLOB_READ_WRITE_TOKEN;
+const isBlobEnabled = !!(process.env.BLOB_READ_WRITE_TOKEN || process.env.nav_READ_WRITE_TOKEN);
 console.log('[Storage] Using adapter:', isBlobEnabled ? 'Vercel Blob' : 'Local File');
 
 export const storage = isBlobEnabled ? new VercelBlobStore() : new FileStore();
