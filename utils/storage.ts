@@ -149,7 +149,7 @@ class VercelBlobStore extends JsonDbStore {
         try {
             // 1. List files to find our db.json
             const { blobs } = await list({
-                limit: 1,
+                limit: 10, // Increased limit to be safer
                 prefix: this.fileName,
                 token: this.token
             });
@@ -158,7 +158,8 @@ class VercelBlobStore extends JsonDbStore {
             if (!blob) return null;
 
             // 2. Fetch content
-            const response = await fetch(blob.url);
+            // Vital: We must disable caching for this fetch, otherwise Next.js will serve stale data!
+            const response = await fetch(blob.url, { cache: 'no-store' });
             if (!response.ok) throw new Error('Failed to fetch DB');
 
             return await response.json();
