@@ -1,224 +1,153 @@
 import { Website, Theme, Category } from '../types';
-import { put, list } from '@vercel/blob';
-import fs from 'fs/promises';
-import path from 'path';
+import { prisma } from './prisma';
 
-// --- Data Structure ---
-interface DbSchema {
-    websites: Website[];
-    categories: Category[];
-    config: {
-        theme: Theme;
-    };
-}
-
-const DEFAULT_DB: DbSchema = {
-    websites: [],
-    categories: [{ id: 'default', name: 'General' }],
-    config: { theme: 'minimal' }
-};
-
-// --- Abstract JSON Store ---
-abstract class JsonDbStore {
-    protected memoryCache: DbSchema | null = null;
-    protected lastFetch: number = 0;
-    protected CACHE_TTL = 1000 * 60; // 1 minute cache for read (optional optimization, strict consistent for now = 0)
-
-    // Abstract methods to be implemented by adapters
-    protected abstract loadRaw(): Promise<DbSchema | null>;
-    protected abstract saveRaw(data: DbSchema): Promise<void>;
-
-    private async ensureData(): Promise<DbSchema> {
-        // Simple caching strategy: Always fetch fresh for now to avoid consistency issues in serverless
-        // In a high traffic app, we'd need better locking or accept checking staleness.
-        // Given this is a personal usage app, fetching every time is safer.
-
-        const data = await this.loadRaw();
-        if (data) {
-            this.memoryCache = data;
-        } else {
-            // Init new DB
-            this.memoryCache = JSON.parse(JSON.stringify(DEFAULT_DB));
-            await this.saveRaw(this.memoryCache!);
-        }
-        return this.memoryCache!;
-    }
-
-    private async saveData() {
-        if (this.memoryCache) {
-            await this.saveRaw(this.memoryCache);
-        }
-    }
-
-    // Public Interface Implementation
+// --- Prisma Store Implementation ---
+class PrismaStore {
     async getWebsites(): Promise<Website[]> {
-        const db = await this.ensureData();
-        return db.websites;
+        const sites = await prisma.website.findMany();
+        return sites.map(s => ({
+            id: s.id,
+            title: s.title,
+            url: s.url,
+            description: s.description || '',
+            iconUrl: s.iconUrl || '',
+            status: (s.status as 'online' | 'offline' | 'checking' | 'unknown') || 'unknown',
+            lastChecked: s.lastChecked,
+            latency: s.latency || undefined,
+            categoryId: s.categoryId || 'default'
+        }));
     }
 
     async addWebsite(site: Website): Promise<Website> {
-        const db = await this.ensureData();
-        if (!site.categoryId && db.categories.length > 0) {
-            site.categoryId = db.categories[0].id;
-        }
-        db.websites.push(site);
-        await this.saveData();
-        return site;
+        // Ensure category exists
+        const categoryId = site.categoryId || (await this.getDefaultCategoryId());
+
+        await prisma.website.create({
+            data: {
+                id: site.id,
+                title: site.title,
+                url: site.url,
+                description: site.description,
+                iconUrl: site.iconUrl,
+                status: site.status,
+                lastChecked: site.lastChecked,
+                latency: site.latency || null,
+                categoryId: categoryId
+            }
+        });
+        return { ...site, categoryId };
     }
 
     async updateWebsite(id: string, updates: Partial<Website>): Promise<boolean> {
-        const db = await this.ensureData();
-        const index = db.websites.findIndex(w => w.id === id);
-        if (index !== -1) {
-            db.websites[index] = { ...db.websites[index], ...updates };
-            await this.saveData();
+        try {
+            await prisma.website.update({
+                where: { id },
+                data: {
+                    title: updates.title,
+                    url: updates.url,
+                    description: updates.description,
+                    iconUrl: updates.iconUrl,
+                    status: updates.status,
+                    lastChecked: updates.lastChecked,
+                    latency: updates.latency,
+                    categoryId: updates.categoryId
+                }
+            });
             return true;
+        } catch {
+            return false;
         }
-        return false;
     }
 
     async deleteWebsite(id: string): Promise<boolean> {
-        const db = await this.ensureData();
-        const initialLen = db.websites.length;
-        db.websites = db.websites.filter(w => w.id !== id);
-        if (db.websites.length < initialLen) {
-            await this.saveData();
+        try {
+            await prisma.website.delete({ where: { id } });
             return true;
+        } catch {
+            return false;
         }
-        return false;
     }
 
     async getCategories(): Promise<Category[]> {
-        const db = await this.ensureData();
-        return db.categories;
+        const categories = await prisma.category.findMany();
+        if (categories.length === 0) {
+            // Seed default
+            const defaultCat = await prisma.category.create({
+                data: { id: 'default', name: 'General' }
+            });
+            return [defaultCat];
+        }
+        return categories;
     }
 
     async addCategory(category: Category): Promise<Category> {
-        const db = await this.ensureData();
-        db.categories.push(category);
-        await this.saveData();
-        return category;
+        return await prisma.category.create({
+            data: {
+                id: category.id,
+                name: category.name
+            }
+        });
     }
 
     async updateCategory(id: string, name: string): Promise<boolean> {
-        const db = await this.ensureData();
-        const category = db.categories.find(c => c.id === id);
-        if (category) {
-            category.name = name;
-            await this.saveData();
+        try {
+            await prisma.category.update({
+                where: { id },
+                data: { name }
+            });
             return true;
+        } catch {
+            return false;
         }
-        return false;
     }
 
     async deleteCategory(id: string): Promise<boolean> {
-        const db = await this.ensureData();
-        if (db.categories.length <= 1) return false;
+        const count = await prisma.category.count();
+        if (count <= 1) return false;
 
-        db.categories = db.categories.filter(c => c.id !== id);
+        try {
+            // Reassign websites to default or another category
+            // For simplicity, we'll just fail if websites exist or require a transaction.
+            // Using a simple strategy: Find another category to move stats to.
+            const other = await prisma.category.findFirst({
+                where: { id: { not: id } }
+            });
 
-        const fallbackId = db.categories[0].id;
-        db.websites.forEach(w => {
-            if (w.categoryId === id) w.categoryId = fallbackId;
-        });
+            if (!other) return false; // Should not happen given count check
 
-        await this.saveData();
-        return true;
+            await prisma.website.updateMany({
+                where: { categoryId: id },
+                data: { categoryId: other.id }
+            });
+
+            await prisma.category.delete({ where: { id } });
+            return true;
+        } catch {
+            return false;
+        }
     }
 
     async getTheme(): Promise<Theme> {
-        const db = await this.ensureData();
-        return db.config?.theme || 'minimal';
+        const config = await prisma.config.findUnique({
+            where: { key: 'theme' }
+        });
+        return (config?.value as Theme) || 'minimal';
     }
 
     async setTheme(theme: Theme): Promise<void> {
-        const db = await this.ensureData();
-        if (!db.config) db.config = { theme: 'minimal' };
-        db.config.theme = theme;
-        await this.saveData();
+        await prisma.config.upsert({
+            where: { key: 'theme' },
+            update: { value: theme },
+            create: { key: 'theme', value: theme }
+        });
+    }
+
+    private async getDefaultCategoryId(): Promise<string> {
+        const first = await prisma.category.findFirst();
+        if (first) return first.id;
+        const newCat = await prisma.category.create({ data: { id: 'default', name: 'General' } });
+        return newCat.id;
     }
 }
 
-// --- Vercel Blob Implementation ---
-// Stores data in a single 'db.json' file in the blob store.
-class VercelBlobStore extends JsonDbStore {
-    private fileName = 'db.json';
-    private token = process.env.BLOB_READ_WRITE_TOKEN || process.env.nav_READ_WRITE_TOKEN;
-
-    protected async loadRaw(): Promise<DbSchema | null> {
-        try {
-            // 1. List files to find our db.json
-            const { blobs } = await list({
-                limit: 10, // Increased limit to be safer
-                prefix: this.fileName,
-                token: this.token
-            });
-            const blob = blobs.find(b => b.pathname === this.fileName);
-
-            if (!blob) return null;
-
-            // 2. Fetch content
-            // Vital: We must disable caching for this fetch, otherwise Next.js will serve stale data!
-            const response = await fetch(blob.url, { cache: 'no-store' });
-            if (!response.ok) throw new Error('Failed to fetch DB');
-
-            return await response.json();
-        } catch (error) {
-            console.error('Blob load error:', error);
-            return null;
-        }
-    }
-
-    protected async saveRaw(data: DbSchema): Promise<void> {
-        try {
-            // Overwrite the file. 
-            // access: 'public' is required for simple download, but means anyone can read if they guess URL.
-            // For a private app, this is "okay" if URL is secret, but technically 'public' blobs are public.
-            // Ideally we'd use private if Vercel Blob supported it easily for server-side reading without token hassle, 
-            // but 'public' is standard for vercel/blob currently unless configured otherwise.
-            await put(this.fileName, JSON.stringify(data), {
-                access: 'public',
-                addRandomSuffix: false, // Crucial: Keep the name constant!
-                token: this.token,
-                cacheControlMaxAge: 0, // Ensure fresh content
-                // @ts-ignore - types might be slightly outdated in some envs, but valid option
-                allowOverwrite: true
-            });
-        } catch (error) {
-            console.error('Blob save error:', error);
-            throw error;
-        }
-    }
-}
-
-// --- Local File Implementation ---
-class FileStore extends JsonDbStore {
-    private filePath = path.join(process.cwd(), 'data', 'db.json');
-
-    protected async loadRaw(): Promise<DbSchema | null> {
-        try {
-            const data = await fs.readFile(this.filePath, 'utf-8');
-            return JSON.parse(data);
-        } catch {
-            return null;
-        }
-    }
-
-    protected async saveRaw(data: DbSchema): Promise<void> {
-        const dir = path.dirname(this.filePath);
-        try {
-            await fs.access(dir);
-        } catch {
-            await fs.mkdir(dir, { recursive: true });
-        }
-        await fs.writeFile(this.filePath, JSON.stringify(data, null, 2));
-    }
-}
-
-// --- Factory ---
-// Use Blob if BLOB_READ_WRITE_TOKEN is present (Vercel standard env), otherwise local file.
-// Note: User can explicitly fallback to file by not setting the token locally.
-const isBlobEnabled = !!(process.env.BLOB_READ_WRITE_TOKEN || process.env.nav_READ_WRITE_TOKEN);
-console.log('[Storage] Using adapter:', isBlobEnabled ? 'Vercel Blob' : 'Local File');
-
-export const storage = isBlobEnabled ? new VercelBlobStore() : new FileStore();
+export const storage = new PrismaStore();
