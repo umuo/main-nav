@@ -1,6 +1,9 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { storage } from '../../../utils/storage';
 import { verifyJwt } from '../../../utils/auth';
+import { Theme } from '../../../types';
+
+const THEMES: Theme[] = ['vibe', 'sunset', 'ocean', 'minimal'];
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
     if (req.method === 'OPTIONS') {
@@ -8,7 +11,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     if (req.method === 'GET') {
-        return res.status(200).json({ theme: await storage.getTheme() });
+        try {
+            return res.status(200).json({ theme: await storage.getTheme() });
+        } catch {
+            console.error('Database unavailable while loading the theme.');
+            return res.status(503).json({ error: 'Database unavailable' });
+        }
     }
 
     if (req.method === 'POST') {
@@ -19,11 +27,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         }
 
         const { theme } = req.body;
-        if (!theme) {
-            return res.status(400).json({ error: 'Missing theme' });
+        if (typeof theme !== 'string' || !THEMES.includes(theme as Theme)) {
+            return res.status(400).json({ error: 'Invalid theme' });
         }
 
-        await storage.setTheme(theme);
+        await storage.setTheme(theme as Theme);
 
         return res.status(200).json({ theme });
     }

@@ -1,7 +1,22 @@
-import React, { useState, useEffect } from 'react';
-import { LayoutDashboard, Lock, LogIn, RefreshCcw, Wifi, WifiOff, Languages } from 'lucide-react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  Activity,
+  AlertTriangle,
+  ArrowLeft,
+  Braces,
+  CheckCircle2,
+  Globe2,
+  Languages,
+  LayoutDashboard,
+  LockKeyhole,
+  LogIn,
+  RefreshCcw,
+  Search,
+  SearchX,
+  ShieldCheck,
+  Sparkles,
+} from 'lucide-react';
 import { Website, ViewState, Category } from '../types';
-import { getWebsites, saveWebsites, isAuthenticated, setAuthenticated } from '../services/storageService';
 import { CHECK_INTERVAL_MS } from '../constants';
 import { useTranslation } from '../contexts/LanguageContext';
 
@@ -15,6 +30,9 @@ export default function Home() {
   const [websites, setWebsites] = useState<Website[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
+  const websitesRef = useRef<Website[]>([]);
 
   const [loginUsername, setLoginUsername] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
@@ -25,60 +43,28 @@ export default function Home() {
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
   useEffect(() => {
-    checkSession();
-    const interval = setInterval(() => {
-      checkAllSites();
-    }, CHECK_INTERVAL_MS);
-    return () => clearInterval(interval);
-  }, []);
+    websitesRef.current = websites;
+  }, [websites]);
 
-  const checkSession = async () => {
+  const checkSession = useCallback(async () => {
     try {
       const res = await fetch('/api/auth/me');
       if (res.ok) {
-        setAuthenticated(true);
+        setIsAdminAuthenticated(true);
         setView('admin');
       } else {
-        setAuthenticated(false);
+        setIsAdminAuthenticated(false);
       }
-    } catch (e) {
-      setAuthenticated(false);
+    } catch {
+      setIsAdminAuthenticated(false);
     }
-  };
-
-  useEffect(() => {
-    fetchWebsites();
-    fetchCategories();
   }, []);
 
-  const fetchCategories = async () => {
-    try {
-      const res = await fetch('/api/categories');
-      if (res.ok) {
-        const data = await res.json();
-        setCategories(data);
-      }
-    } catch (e) {
-      console.error('Failed to fetch categories');
-    }
-  };
-
-  const fetchWebsites = async () => {
-    try {
-      const res = await fetch('/api/sites');
-      if (res.ok) {
-        const data = await res.json();
-        setWebsites(data);
-        data.forEach((site: Website) => {
-          if (site.status === 'unknown') {
-            checkSingleSite(site.id, data);
-          }
-        });
-      }
-    } catch (error) {
-      console.error('Failed to fetch websites', error);
-    }
-  };
+  useEffect(() => {
+    // Session state is loaded from the server once the client has mounted.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void checkSession();
+  }, [checkSession]);
 
   const addCategory = async (name: string) => {
     try {
@@ -126,42 +112,94 @@ export default function Home() {
     }
   };
 
-  const checkSingleSite = async (id: string, currentList = websites) => {
-    const updatedList = currentList.map(site =>
-      site.id === id ? { ...site, status: 'checking' as const } : site
-    );
-    setWebsites(updatedList);
-
-    const siteToCheck = updatedList.find(s => s.id === id);
-    if (!siteToCheck) return;
+  const checkSingleSite = useCallback(async (id: string, currentList = websitesRef.current) => {
+    if (!currentList.some(site => site.id === id)) return;
+    setWebsites(prev => {
+      const next = prev.map(site => site.id === id ? { ...site, status: 'checking' as const } : site);
+      websitesRef.current = next;
+      return next;
+    });
 
     try {
       const res = await fetch('/api/monitor/check', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: siteToCheck.url })
+        body: JSON.stringify({ id })
       });
+      if (!res.ok) throw new Error('Website check failed');
       const result = await res.json();
-      const newStatus = result.status;
-      setWebsites(prev => prev.map(site =>
-        site.id === id ? { ...site, status: newStatus, lastChecked: Date.now() } : site
-      ));
-    } catch (error) {
-      setWebsites(prev => prev.map(site =>
-        site.id === id ? { ...site, status: 'offline', lastChecked: Date.now() } : site
-      ));
+      setWebsites(prev => {
+        const next = prev.map(site => site.id === id ? {
+          ...site,
+          status: result.status,
+          lastChecked: result.lastChecked,
+          latency: result.latency
+        } : site);
+        websitesRef.current = next;
+        return next;
+      });
+    } catch {
+      setWebsites(prev => {
+        const next = prev.map(site =>
+          site.id === id ? { ...site, status: 'offline' as const, lastChecked: Date.now(), latency: undefined } : site
+        );
+        websitesRef.current = next;
+        return next;
+      });
     }
-  };
+  }, []);
 
-  const checkAllSites = () => {
-    websites.forEach(site => checkSingleSite(site.id));
-  };
+  const checkAllSites = useCallback((currentList = websitesRef.current) => {
+    currentList.forEach(site => void checkSingleSite(site.id, currentList));
+  }, [checkSingleSite]);
 
-  const handleCaptchaValidate = (isValid: boolean, token: string, answer: string) => {
+  const fetchCategories = useCallback(async () => {
+    try {
+      const res = await fetch('/api/categories');
+      if (res.ok) {
+        const data = await res.json();
+        setCategories(data);
+      }
+    } catch (error) {
+      console.error('Failed to fetch categories', error);
+    }
+  }, []);
+
+  const fetchWebsites = useCallback(async () => {
+    try {
+      const res = await fetch('/api/sites');
+      if (res.ok) {
+        const data = await res.json();
+        websitesRef.current = data;
+        setWebsites(data);
+        data.forEach((site: Website) => {
+          if (site.status === 'unknown') {
+            void checkSingleSite(site.id, data);
+          }
+        });
+      }
+    } catch (error) {
+      console.error('Failed to fetch websites', error);
+    }
+  }, [checkSingleSite]);
+
+  useEffect(() => {
+    // Initial API hydration intentionally populates the client-side dashboard state.
+    void fetchWebsites();
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void fetchCategories();
+  }, [fetchCategories, fetchWebsites]);
+
+  useEffect(() => {
+    const interval = setInterval(() => checkAllSites(websitesRef.current), CHECK_INTERVAL_MS);
+    return () => clearInterval(interval);
+  }, [checkAllSites]);
+
+  const handleCaptchaValidate = useCallback((isValid: boolean, token: string, answer: string) => {
     setIsCaptchaValid(isValid);
     setCaptchaToken(token);
     setCaptchaAnswer(answer);
-  };
+  }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -184,7 +222,7 @@ export default function Home() {
       });
 
       if (res.ok) {
-        setAuthenticated(true);
+        setIsAdminAuthenticated(true);
         setLoginError('');
         setLoginUsername('');
         setLoginPassword('');
@@ -192,7 +230,7 @@ export default function Home() {
       } else {
         setLoginError(t('login.errorAuth'));
       }
-    } catch (error) {
+    } catch {
       setLoginError("An unexpected error occurred.");
     } finally {
       setIsLoggingIn(false);
@@ -201,12 +239,12 @@ export default function Home() {
 
   const handleLogout = async () => {
     await fetch('/api/auth/logout', { method: 'POST' });
-    setAuthenticated(false);
+    setIsAdminAuthenticated(false);
     setView('dashboard');
   };
 
   const checkAdminAccess = () => {
-    if (isAuthenticated()) {
+    if (isAdminAuthenticated) {
       setView('admin');
     } else {
       setView('login');
@@ -226,7 +264,7 @@ export default function Home() {
         setWebsites([...websites, newSite]);
         checkSingleSite(newSite.id, [...websites, newSite]);
       }
-    } catch (e) {
+    } catch {
       alert(t('admin.errorAdd'));
     }
   };
@@ -239,6 +277,8 @@ export default function Home() {
         body: JSON.stringify({
           title: updatedSite.title,
           url: updatedSite.url,
+          description: updatedSite.description,
+          iconUrl: updatedSite.iconUrl,
           categoryId: updatedSite.categoryId
         })
       });
@@ -258,7 +298,7 @@ export default function Home() {
         if (res.ok) {
           setWebsites(websites.filter(w => w.id !== id));
         }
-      } catch (e) {
+      } catch {
         alert('Failed to delete');
       }
     }
@@ -270,58 +310,71 @@ export default function Home() {
 
   const onlineCount = websites.filter(w => w.status === 'online').length;
   const offlineCount = websites.filter(w => w.status === 'offline').length;
-
-  const filteredWebsites = selectedCategory === 'all'
-    ? websites
-    : websites.filter(w => w.categoryId === selectedCategory);
+  const attentionCount = websites.filter(w => w.status === 'offline' || w.status === 'unknown').length;
+  const availability = websites.length === 0 ? 100 : Math.round((onlineCount / websites.length) * 100);
+  const normalizedSearch = searchTerm.trim().toLowerCase();
+  const filteredWebsites = websites.filter(site => {
+    const inCategory = selectedCategory === 'all' || site.categoryId === selectedCategory;
+    const matchesSearch = normalizedSearch.length === 0 ||
+      site.title.toLowerCase().includes(normalizedSearch) ||
+      site.url.toLowerCase().includes(normalizedSearch) ||
+      site.description?.toLowerCase().includes(normalizedSearch);
+    return inCategory && matchesSearch;
+  });
+  const isRefreshing = websites.some(site => site.status === 'checking');
 
   return (
-    <div className="min-h-screen flex flex-col font-sans transition-colors duration-500">
-      <header className="sticky top-0 z-40 glass-panel border-b-1 rounded-none">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
-          <div className="flex items-center gap-3 cursor-pointer group" onClick={() => setView('dashboard')}>
-            <div className="w-10 h-10 glass-panel rounded-xl flex items-center justify-center text-[var(--accent-color)] group-hover:scale-110 transition-transform overflow-hidden">
-              <img src="/logo_transparent.png" alt="Logo" className="w-full h-full object-cover" />
-            </div>
-            <h1 className="font-handwritten text-4xl text-transparent bg-clip-text bg-gradient-to-r from-pink-400 to-purple-500 drop-shadow-md">{t('appName')}</h1>
-          </div>
+    <div className="app-shell flex min-h-screen flex-col">
+      <div className="ambient-orb ambient-orb-left" aria-hidden="true" />
+      <div className="ambient-orb ambient-orb-right" aria-hidden="true" />
 
-          <nav className="flex items-center gap-2 md:gap-4">
+      <header className="sticky top-0 z-40 px-3 pt-3 sm:px-5 sm:pt-4">
+        <div className="nav-shell mx-auto flex h-[4.25rem] max-w-[1400px] items-center justify-between rounded-2xl px-3.5 sm:px-5">
+          <button
+            type="button"
+            onClick={() => setView('dashboard')}
+            className="group flex min-w-0 items-center gap-3 rounded-xl text-left"
+            aria-label={t('dashboard.dashboardLink')}
+          >
+            <div className="primary-button flex h-10 w-10 flex-none items-center justify-center rounded-xl transition-transform duration-200 group-hover:scale-[1.04]">
+              <Braces size={19} aria-hidden="true" />
+            </div>
+            <span className="min-w-0">
+              <span className="brand-title block truncate text-[var(--text-primary)]">{t('appName')}</span>
+              <span className="brand-subtitle hidden truncate sm:block">{t('dashboard.brandSubtitle')}</span>
+            </span>
+          </button>
+
+          <nav className="flex items-center gap-1.5 sm:gap-2">
             {view === 'dashboard' && (
-              <div className="hidden md:flex items-center gap-4 text-sm font-medium mr-4">
-                <span className="flex items-center gap-1.5 text-green-500 bg-green-500/10 px-3 py-1 rounded-full border border-green-500/20 backdrop-blur-sm">
-                  <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
-                  {onlineCount} {t('dashboard.online')}
-                </span>
-                {offlineCount > 0 && (
-                  <span className="flex items-center gap-1.5 text-red-500 bg-red-500/10 px-3 py-1 rounded-full border border-red-500/20 backdrop-blur-sm">
-                    <WifiOff size={12} />
-                    {offlineCount} {t('dashboard.offline')}
-                  </span>
-                )}
-              </div>
+              <span className={`status-badge mr-1 hidden sm:inline-flex ${offlineCount > 0 ? 'status-offline' : 'status-online'}`}>
+                {offlineCount > 0
+                  ? `${offlineCount} ${t('dashboard.offline')}`
+                  : t('dashboard.operationalSummary')}
+              </span>
             )}
 
             <button
               onClick={toggleLanguage}
-              className="flex items-center gap-1 p-2 text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-white/10 rounded-lg transition-colors text-xs font-bold uppercase backdrop-blur-sm"
+              className="icon-button flex h-9 items-center gap-1.5 rounded-xl px-2.5 text-xs font-bold uppercase"
+              title={language === 'en' ? '切换到中文' : 'Switch to English'}
             >
-              <Languages size={18} />
+              <Languages size={15} />
               <span>{language}</span>
             </button>
 
             {view === 'dashboard' ? (
               <button
                 onClick={checkAdminAccess}
-                className="flex items-center gap-2 text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors text-sm font-medium p-2 rounded-lg hover:bg-white/10 backdrop-blur-sm"
+                className="icon-button flex h-9 w-9 items-center justify-center rounded-xl"
                 title={t('dashboard.adminLogin')}
               >
-                <Lock size={16} />
+                <LockKeyhole size={15} />
               </button>
             ) : (
               <button
                 onClick={() => setView('dashboard')}
-                className="flex items-center gap-2 text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors text-sm font-medium p-2 rounded-lg hover:bg-white/10 backdrop-blur-sm"
+                className="secondary-button flex h-9 items-center gap-2 rounded-xl px-3 text-sm font-semibold"
               >
                 <LayoutDashboard size={16} />
                 <span className="hidden sm:inline">{t('dashboard.dashboardLink')}</span>
@@ -332,33 +385,71 @@ export default function Home() {
       </header>
 
       <main className="flex-grow">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+        <div className="mx-auto w-full max-w-[1400px] px-4 py-7 sm:px-6 sm:py-10 lg:px-8">
 
           {view === 'dashboard' && (
             <div className="animate-fade-in-up">
-              <div className="flex justify-between items-end mb-8">
-                <div>
-                  <h2 className="text-3xl font-bold text-[var(--text-primary)] drop-shadow-sm">{t('dashboard.systemStatus')}</h2>
-                  <p className="text-[var(--text-secondary)] mt-1 text-lg">{t('dashboard.monitoringDesc', { count: websites.length })}</p>
-                </div>
-                <button
-                  onClick={() => checkAllSites()}
-                  className="flex items-center gap-2 px-6 py-2 glass-panel text-[var(--text-primary)] rounded-xl hover:bg-white/10 transition-all text-sm font-medium"
-                >
-                  <RefreshCcw size={16} />
-                  {t('dashboard.refreshAll')}
-                </button>
-              </div>
+              <section className="hero-panel rounded-[1.75rem] p-5 sm:p-7 lg:p-8">
+                <div className="relative z-10 flex flex-col justify-between gap-7 lg:flex-row lg:items-start">
+                  <div className="max-w-2xl">
+                    <span className="eyebrow">
+                      <Sparkles size={14} aria-hidden="true" />
+                      {t('dashboard.workspace')}
+                    </span>
+                    <h2 className="mt-4 text-3xl font-semibold tracking-[-0.045em] text-[var(--text-primary)] sm:text-4xl lg:text-[2.75rem]">
+                      {t('dashboard.systemStatus')}
+                    </h2>
+                    <p className="mt-3 max-w-xl text-sm leading-6 text-[var(--text-secondary)] sm:text-base">
+                      {t('dashboard.monitoringDesc', { count: websites.length })}
+                    </p>
+                    <div className="mt-5 flex items-center gap-2.5 text-sm font-medium text-[var(--text-secondary)]">
+                      <span className={`h-2.5 w-2.5 rounded-full ${attentionCount > 0 ? 'bg-[#f04438]' : 'bg-[#12b76a]'} shadow-[0_0_0_5px_color-mix(in_srgb,currentColor_10%,transparent)]`} />
+                      {attentionCount > 0
+                        ? t('dashboard.attentionSummary', { count: attentionCount })
+                        : t('dashboard.operationalSummary')}
+                    </div>
+                  </div>
 
-              {/* Category Filter */}
-              {categories.length > 0 && (
-                <div className="flex gap-2 overflow-x-auto pb-6 scrollbar-hide">
+                  <button
+                    onClick={() => checkAllSites()}
+                    disabled={isRefreshing || websites.length === 0}
+                    className="primary-button flex w-full items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
+                  >
+                    <RefreshCcw size={16} className={isRefreshing ? 'animate-spin' : ''} />
+                    {t('dashboard.refreshAll')}
+                  </button>
+                </div>
+
+                <div className="relative z-10 mt-7 grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  <div className="metric-card rounded-2xl p-4">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-semibold text-[var(--text-secondary)]">{t('dashboard.totalServices')}</span>
+                      <Globe2 size={16} className="text-[var(--accent-color)]" />
+                    </div>
+                    <strong className="mt-3 block text-2xl font-semibold tracking-[-0.04em]">{websites.length}</strong>
+                  </div>
+                  <div className="metric-card rounded-2xl p-4">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-semibold text-[var(--text-secondary)]">{t('dashboard.availability')}</span>
+                      <Activity size={16} className="text-[var(--status-online-text)]" />
+                    </div>
+                    <strong className="mt-3 block text-2xl font-semibold tracking-[-0.04em]">{availability}%</strong>
+                  </div>
+                  <div className="metric-card rounded-2xl p-4">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-semibold text-[var(--text-secondary)]">{t('dashboard.needsAttention')}</span>
+                      <AlertTriangle size={16} className={attentionCount > 0 ? 'text-[var(--status-offline-text)]' : 'text-[var(--text-tertiary)]'} />
+                    </div>
+                    <strong className="mt-3 block text-2xl font-semibold tracking-[-0.04em]">{attentionCount}</strong>
+                  </div>
+                </div>
+              </section>
+
+              <section className="control-surface mt-5 flex flex-col gap-3 rounded-2xl p-2.5 sm:flex-row sm:items-center sm:justify-between">
+                <div className="scrollbar-hide flex min-w-0 gap-1 overflow-x-auto">
                   <button
                     onClick={() => setSelectedCategory('all')}
-                    className={`px-4 py-1.5 rounded-full text-sm font-medium transition-all whitespace-nowrap ${selectedCategory === 'all'
-                      ? 'bg-[var(--accent-color)] text-white shadow-lg shadow-pink-500/20'
-                      : 'bg-[var(--glass-bg)] text-[var(--text-secondary)] border border-[var(--glass-border)] hover:bg-[var(--glass-border)]'
-                      }`}
+                    className={`category-pill whitespace-nowrap rounded-xl px-3.5 py-2 text-sm font-semibold ${selectedCategory === 'all' ? 'category-pill-active' : ''}`}
                   >
                     {t('dashboard.all')}
                   </button>
@@ -366,18 +457,26 @@ export default function Home() {
                     <button
                       key={cat.id}
                       onClick={() => setSelectedCategory(cat.id)}
-                      className={`px-4 py-1.5 rounded-full text-sm font-medium transition-all whitespace-nowrap ${selectedCategory === cat.id
-                        ? 'bg-[var(--accent-color)] text-white shadow-lg shadow-pink-500/20'
-                        : 'bg-[var(--glass-bg)] text-[var(--text-secondary)] border border-[var(--glass-border)] hover:bg-[var(--glass-border)]'
-                        }`}
+                      className={`category-pill whitespace-nowrap rounded-xl px-3.5 py-2 text-sm font-semibold ${selectedCategory === cat.id ? 'category-pill-active' : ''}`}
                     >
                       {cat.id === 'default' ? t('dashboard.general') : cat.name}
                     </button>
                   ))}
                 </div>
-              )}
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                <label className="relative block w-full flex-none sm:w-64 lg:w-72">
+                  <Search className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--text-tertiary)]" size={16} />
+                  <input
+                    type="search"
+                    value={searchTerm}
+                    onChange={(event) => setSearchTerm(event.target.value)}
+                    placeholder={t('dashboard.searchPlaceholder')}
+                    className="field-control h-10 rounded-xl py-2 pl-10 pr-3 text-sm"
+                  />
+                </label>
+              </section>
+
+              <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                 {filteredWebsites.map(site => (
                   <SiteCard
                     key={site.id}
@@ -386,10 +485,14 @@ export default function Home() {
                   />
                 ))}
                 {filteredWebsites.length === 0 && (
-                  <div className="col-span-full flex flex-col items-center justify-center p-12 text-center text-gray-400 glass-panel rounded-2xl border-dashed border-white/20">
-                    <WifiOff size={48} className="mb-4 opacity-50" />
-                    <p className="text-lg text-[var(--text-secondary)]">{t('dashboard.noSites')}</p>
-                    <button onClick={checkAdminAccess} className="text-[var(--accent-color)] hover:underline mt-2 font-medium">{t('dashboard.loginToAdd')}</button>
+                  <div className="glass-panel col-span-full flex min-h-64 flex-col items-center justify-center rounded-[1.5rem] border-dashed p-10 text-center">
+                    <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-[var(--accent-soft)] text-[var(--accent-color)]">
+                      {normalizedSearch ? <SearchX size={25} /> : <Globe2 size={25} />}
+                    </div>
+                    <p className="text-base font-semibold text-[var(--text-primary)]">{t('dashboard.noSites')}</p>
+                    <button onClick={checkAdminAccess} className="mt-2 text-sm font-semibold text-[var(--accent-color)] hover:underline">
+                      {t('dashboard.loginToAdd')}
+                    </button>
                   </div>
                 )}
               </div>
@@ -397,66 +500,94 @@ export default function Home() {
           )}
 
           {view === 'login' && (
-            <div className="flex justify-center items-center min-h-[60vh] animate-fade-in">
-              <div className="glass-panel p-8 rounded-2xl w-full max-w-md relative overflow-hidden">
-                <div className="absolute top-0 left-0 w-full h-1 bg-[var(--accent-gradient)]"></div>
-
-                <div className="text-center mb-8">
-                  <div className="mx-auto w-16 h-16 bg-white/10 text-[var(--accent-color)] rounded-full flex items-center justify-center mb-4 backdrop-blur-md border border-white/10">
-                    <LogIn size={28} />
-                  </div>
-                  <h2 className="text-2xl font-bold text-[var(--text-primary)]">{t('login.title')}</h2>
-                  <p className="text-[var(--text-secondary)] text-sm mt-1">{t('login.subtitle')}</p>
+            <div className="grid min-h-[calc(100vh-11rem)] animate-fade-in items-stretch gap-5 lg:grid-cols-[1.05fr_0.95fr]">
+              <section className="hero-panel hidden min-h-[36rem] flex-col justify-between rounded-[1.75rem] p-8 lg:flex lg:p-10">
+                <div className="relative z-10">
+                  <span className="eyebrow"><ShieldCheck size={14} /> {t('login.securityCheck')}</span>
+                  <h2 className="mt-5 max-w-lg text-4xl font-semibold tracking-[-0.045em] text-[var(--text-primary)]">
+                    {t('login.title')}
+                  </h2>
+                  <p className="mt-4 max-w-md text-base leading-7 text-[var(--text-secondary)]">{t('login.subtitle')}</p>
                 </div>
+                <div className="relative z-10 grid gap-3 sm:grid-cols-2">
+                  <div className="metric-card rounded-2xl p-4">
+                    <Globe2 size={18} className="text-[var(--accent-color)]" />
+                    <strong className="mt-4 block text-2xl">{websites.length}</strong>
+                    <span className="mt-1 block text-xs font-medium text-[var(--text-secondary)]">{t('dashboard.totalServices')}</span>
+                  </div>
+                  <div className="metric-card rounded-2xl p-4">
+                    <CheckCircle2 size={18} className="text-[var(--status-online-text)]" />
+                    <strong className="mt-4 block text-2xl">{availability}%</strong>
+                    <span className="mt-1 block text-xs font-medium text-[var(--text-secondary)]">{t('dashboard.availability')}</span>
+                  </div>
+                </div>
+              </section>
 
-                <form onSubmit={handleLogin} className="space-y-5">
-                  {loginError && (
-                    <div className="bg-red-500/20 text-red-200 p-3 rounded-lg text-sm text-center border border-red-500/30">
-                      {loginError}
+              <div className="flex items-center justify-center py-4">
+                <div className="modal-panel relative w-full max-w-md overflow-hidden rounded-[1.75rem] p-6 sm:p-8">
+                  <div className="absolute inset-x-0 top-0 h-1 bg-[var(--accent-gradient)]" />
+
+                  <div className="mb-7">
+                    <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-2xl bg-[var(--accent-soft)] text-[var(--accent-color)] ring-1 ring-[var(--glass-border)]">
+                      <LogIn size={21} />
                     </div>
-                  )}
+                    <h2 className="text-2xl font-semibold tracking-[-0.035em] text-[var(--text-primary)]">{t('login.title')}</h2>
+                    <p className="mt-2 text-sm text-[var(--text-secondary)]">{t('login.subtitle')}</p>
+                  </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-[var(--text-secondary)] mb-1">{t('login.username')}</label>
-                    <input
-                      type="text"
-                      value={loginUsername}
-                      onChange={(e) => setLoginUsername(e.target.value)}
-                      className="w-full px-4 py-2 bg-black/10 border border-white/10 rounded-lg text-[var(--text-primary)] placeholder-gray-500 focus:ring-2 focus:ring-[var(--accent-color)] focus:border-transparent outline-none transition-all"
-                      placeholder={t('login.username')}
+                  <form onSubmit={handleLogin} className="space-y-4">
+                    {loginError && (
+                      <div className="rounded-xl border border-[var(--status-offline-border)] bg-[var(--status-offline-bg)] p-3 text-sm text-[var(--status-offline-text)]">
+                        {loginError}
+                      </div>
+                    )}
+
+                    <div>
+                      <label className="mb-1.5 block text-sm font-semibold text-[var(--text-secondary)]">{t('login.username')}</label>
+                      <input
+                        type="text"
+                        autoComplete="username"
+                        value={loginUsername}
+                        onChange={(e) => setLoginUsername(e.target.value)}
+                        className="field-control rounded-xl px-4 py-3 text-sm"
+                        placeholder={t('login.username')}
+                        disabled={isLoggingIn}
+                      />
+                    </div>
+
+                    <div>
+                      <label className="mb-1.5 block text-sm font-semibold text-[var(--text-secondary)]">{t('login.password')}</label>
+                      <input
+                        type="password"
+                        autoComplete="current-password"
+                        value={loginPassword}
+                        onChange={(e) => setLoginPassword(e.target.value)}
+                        className="field-control rounded-xl px-4 py-3 text-sm"
+                        placeholder="••••••••"
+                        disabled={isLoggingIn}
+                      />
+                    </div>
+
+                    <div className="pt-1">
+                      <label className="mb-2 block text-sm font-semibold text-[var(--text-secondary)]">{t('login.securityCheck')}</label>
+                      <Captcha onValidate={handleCaptchaValidate} />
+                    </div>
+
+                    <button
+                      type="submit"
                       disabled={isLoggingIn}
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-[var(--text-secondary)] mb-1">{t('login.password')}</label>
-                    <input
-                      type="password"
-                      value={loginPassword}
-                      onChange={(e) => setLoginPassword(e.target.value)}
-                      className="w-full px-4 py-2 bg-black/10 border border-white/10 rounded-lg text-[var(--text-primary)] placeholder-gray-500 focus:ring-2 focus:ring-[var(--accent-color)] focus:border-transparent outline-none transition-all"
-                      placeholder="••••••••"
-                      disabled={isLoggingIn}
-                    />
-                  </div>
-
-                  <div className="pt-2">
-                    <label className="block text-sm font-medium text-[var(--text-secondary)] mb-2">{t('login.securityCheck')}</label>
-                    <Captcha onValidate={handleCaptchaValidate} />
-                  </div>
+                      className="primary-button mt-2 flex w-full items-center justify-center gap-2 rounded-xl py-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {isLoggingIn && <RefreshCcw size={15} className="animate-spin" />}
+                      {isLoggingIn ? t('status.checking') : t('login.submit')}
+                    </button>
+                  </form>
 
                   <button
-                    type="submit"
-                    disabled={isLoggingIn}
-                    className="w-full bg-[var(--accent-color)] text-white py-3 rounded-lg hover:opacity-90 transition-all font-semibold shadow-lg mt-4 disabled:opacity-50 disabled:cursor-not-allowed"
+                    onClick={() => setView('dashboard')}
+                    className="mt-6 flex items-center gap-2 text-sm font-semibold text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
                   >
-                    {isLoggingIn ? t('status.checking') : t('login.submit')}
-                  </button>
-                </form>
-
-                <div className="mt-6 text-center">
-                  <button onClick={() => setView('dashboard')} className="text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors">
-                    &larr; {t('login.back')}
+                    <ArrowLeft size={15} /> {t('login.back')}
                   </button>
                 </div>
               </div>
@@ -480,13 +611,17 @@ export default function Home() {
           )}
 
         </div>
-      </main >
+      </main>
 
-      <footer className="border-t border-white/10 py-8 bg-black/10 backdrop-blur-sm">
-        <div className="max-w-7xl mx-auto px-4 text-center text-sm text-[var(--text-secondary)]">
-          <p>&copy; {new Date().getFullYear()} {t('dashboard.footer')}</p>
+      <footer className="mt-auto px-4 pb-7 pt-3">
+        <div className="mx-auto flex max-w-[1400px] flex-col items-center justify-between gap-3 border-t border-[var(--glass-border)] pt-5 text-xs text-[var(--text-tertiary)] sm:flex-row">
+          <p>&copy; {new Date().getFullYear()} {t('appName')}</p>
+          <p className="flex items-center gap-2">
+            <span className="h-1.5 w-1.5 rounded-full bg-[var(--status-online-text)]" />
+            {t('dashboard.footer')}
+          </p>
         </div>
       </footer>
-    </div >
+    </div>
   );
 }

@@ -2,9 +2,7 @@ import type { NextApiRequest, NextApiResponse } from 'next';
 import bcrypt from 'bcryptjs';
 import { verifyCaptchaToken } from '../../../utils/captcha';
 import { signJwt, setAuthCookie } from '../../../utils/auth';
-
-// 默认 hash (密码: admin123)
-const DEFAULT_HASH = '$2a$10$o32YRX3kfcC4mgmHVewr/.cMWj5EORQGWA.mvswBOdpZ65tzmcFze';
+import { ConfigurationError, requireEnv } from '../../../utils/env';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') {
@@ -13,24 +11,32 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   const { username, password } = req.body;
 
-  const ADMIN_USERNAME = process.env.ADMIN_USERNAME || 'admin';
-  const ADMIN_PASSWORD_HASH = process.env.ADMIN_PASSWORD_HASH || DEFAULT_HASH;
+  try {
+    const adminUsername = requireEnv('ADMIN_USERNAME');
+    const adminPasswordHash = requireEnv('ADMIN_PASSWORD_HASH');
+    const { captchaToken, captchaAnswer } = req.body;
 
-  console.log('Hash from env:', ADMIN_PASSWORD_HASH);
+    if (typeof captchaToken !== 'string' || typeof captchaAnswer !== 'string' || !verifyCaptchaToken(captchaToken, captchaAnswer)) {
+      return res.status(400).json({ error: 'Invalid captcha' });
+    }
 
-  const { captchaToken, captchaAnswer } = req.body;
-  if (!verifyCaptchaToken(captchaToken, captchaAnswer)) {
-    return res.status(400).json({ error: 'Invalid captcha' });
+    if (!/^\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}$/.test(adminPasswordHash)) {
+      throw new ConfigurationError('ADMIN_PASSWORD_HASH is not a valid bcrypt hash');
+    }
+
+    const isPasswordValid = typeof password === 'string' && await bcrypt.compare(password, adminPasswordHash);
+    if (username === adminUsername && isPasswordValid) {
+      const token = signJwt({ username: adminUsername, role: 'admin' });
+      setAuthCookie(res, token);
+      return res.status(200).json({ success: true });
+    }
+
+    return res.status(401).json({ error: 'Invalid credentials' });
+  } catch (error) {
+    if (error instanceof ConfigurationError) {
+      console.error(`Authentication configuration error: ${error.message}`);
+      return res.status(500).json({ error: 'Authentication is not configured' });
+    }
+    throw error;
   }
-
-  const isPasswordValid = bcrypt.compareSync(password, ADMIN_PASSWORD_HASH);
-  console.log('Password valid:', isPasswordValid);
-
-  if (username === ADMIN_USERNAME && isPasswordValid) {
-    const token = signJwt({ username: ADMIN_USERNAME, role: 'admin' });
-    setAuthCookie(res, token);
-    return res.status(200).json({ success: true });
-  }
-
-  return res.status(401).json({ error: 'Invalid credentials' });
 }

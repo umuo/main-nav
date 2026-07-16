@@ -1,17 +1,17 @@
-import { NextApiRequest, NextApiResponse } from 'next';
+import { NextApiResponse } from 'next';
 import jwt from 'jsonwebtoken';
 import { serialize } from 'cookie';
-
-const JWT_SECRET = process.env.JWT_SECRET || 'default-jwt-secret-key-change-me-in-prod';
+import { requireEnv } from './env';
 
 export function signJwt(payload: object) {
-    return jwt.sign(payload, JWT_SECRET, { expiresIn: '24h' });
+    return jwt.sign(payload, requireEnv('JWT_SECRET', 32), { algorithm: 'HS256', expiresIn: '24h' });
 }
 
 export function verifyJwt(token: string) {
+    const secret = requireEnv('JWT_SECRET', 32);
     try {
-        return jwt.verify(token, JWT_SECRET);
-    } catch (e) {
+        return jwt.verify(token, secret, { algorithms: ['HS256'] });
+    } catch {
         return null;
     }
 }

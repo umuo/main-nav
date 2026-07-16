@@ -18,6 +18,8 @@ export const LanguageProvider: React.FC<{ children: ReactNode }> = ({ children }
     // Optionally persist language preference
     const saved = localStorage.getItem('sentinel_nav_lang');
     if (saved === 'en' || saved === 'zh') {
+      // The persisted client preference is only available after hydration.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setLanguage(saved);
     }
   }, []);
@@ -29,18 +31,18 @@ export const LanguageProvider: React.FC<{ children: ReactNode }> = ({ children }
 
   const t = (path: string, params?: Record<string, string | number>): string => {
     const keys = path.split('.');
-    let value: any = translations[language];
+    let value: unknown = translations[language];
     
     for (const key of keys) {
       if (value && typeof value === 'object' && key in value) {
-        value = value[key as keyof typeof value];
+        value = (value as Record<string, unknown>)[key];
       } else {
         return path; // Fallback to key if not found
       }
     }
 
     if (typeof value === 'string' && params) {
-      return value.replace(/{(\w+)}/g, (_, k) => String(params[k] || `{${k}}`));
+      return value.replace(/{(\w+)}/g, (_, k) => String(params[k] ?? `{${k}}`));
     }
 
     return typeof value === 'string' ? value : path;

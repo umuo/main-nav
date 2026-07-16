@@ -4,6 +4,8 @@ import { verifyJwt } from '../../../utils/auth';
 import { Website } from '../../../types';
 import { randomUUID } from 'crypto';
 
+type ImportedWebsite = Partial<Website> & { categoryName?: string };
+
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
     if (req.method === 'OPTIONS') {
         return res.status(200).end();
@@ -18,7 +20,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    const sites = req.body as Website[];
+    const sites = req.body as ImportedWebsite[];
 
     if (!Array.isArray(sites)) {
         return res.status(400).json({ error: 'Invalid format. Expected an array of websites.' });
@@ -40,7 +42,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             if (!site.title || !site.url) continue;
 
             let finalCategoryId = site.categoryId;
-            const importedCategoryName = (site as any).categoryName;
+            const importedCategoryName = typeof site.categoryName === 'string' ? site.categoryName.trim() : '';
 
             // Priority 1: If categoryName is provided
             if (importedCategoryName) {

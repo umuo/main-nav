@@ -1,37 +1,48 @@
 import crypto from 'crypto';
+import { ConfigurationError, requireEnv } from './env';
 
-const CAPTCHA_SECRET = process.env.CAPTCHA_SECRET || 'default-secret-key-change-me';
+const CAPTCHA_TTL_MS = 5 * 60 * 1000;
+
+function getEncryptionKey(): Buffer {
+    const secret = requireEnv('CAPTCHA_SECRET', 32);
+    if (secret === process.env.JWT_SECRET) {
+        throw new ConfigurationError('CAPTCHA_SECRET must be different from JWT_SECRET');
+    }
+    return crypto.createHash('sha256').update(secret).digest();
+}
 
 export function generateCaptchaToken(answer: number): string {
-    // Create a signature of the answer
-    // We can include a timestamp to prevent replay attacks if we want, but for now simple answer validation is a good step up.
-    // Format: "timestamp:hashed_value"
-    const timestamp = Date.now();
-    const data = `${answer}:${timestamp}`;
-    const signature = crypto.createHmac('sha256', CAPTCHA_SECRET).update(data).digest('hex');
-    return `${data}:${signature}`;
+    const iv = crypto.randomBytes(12);
+    const cipher = crypto.createCipheriv('aes-256-gcm', getEncryptionKey(), iv);
+    const payload = JSON.stringify({ answer, expiresAt: Date.now() + CAPTCHA_TTL_MS });
+    const encrypted = Buffer.concat([cipher.update(payload, 'utf8'), cipher.final()]);
+    const tag = cipher.getAuthTag();
+
+    return [iv, encrypted, tag].map(part => part.toString('base64url')).join('.');
 }
 
 export function verifyCaptchaToken(token: string, userAnswer: string): boolean {
     try {
-        const [answerStr, timestampStr, signature] = token.split(':');
+        if (!/^\d+$/.test(userAnswer)) return false;
 
-        // Check if token is well-formed
-        if (!answerStr || !timestampStr || !signature) return false;
+        const parts = token.split('.');
+        if (parts.length !== 3) return false;
 
-        // Check expiration (e.g. 5 minutes)
-        const timestamp = parseInt(timestampStr, 10);
-        if (Date.now() - timestamp > 5 * 60 * 1000) return false;
+        const [iv, encrypted, tag] = parts.map(part => Buffer.from(part, 'base64url'));
+        if (iv.length !== 12 || tag.length !== 16 || encrypted.length === 0) return false;
 
-        // Verify signature
-        const data = `${answerStr}:${timestampStr}`;
-        const expectedSignature = crypto.createHmac('sha256', CAPTCHA_SECRET).update(data).digest('hex');
+        const decipher = crypto.createDecipheriv('aes-256-gcm', getEncryptionKey(), iv);
+        decipher.setAuthTag(tag);
+        const payload = Buffer.concat([decipher.update(encrypted), decipher.final()]).toString('utf8');
+        const data = JSON.parse(payload) as { answer?: unknown; expiresAt?: unknown };
 
-        if (expectedSignature !== signature) return false;
+        if (typeof data.answer !== 'number' || typeof data.expiresAt !== 'number' || Date.now() > data.expiresAt) {
+            return false;
+        }
 
-        // Verify answer
-        return parseInt(answerStr, 10) === parseInt(userAnswer, 10);
+        return data.answer === Number(userAnswer);
     } catch (error) {
+        if (error instanceof ConfigurationError) throw error;
         return false;
     }
 }

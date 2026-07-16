@@ -10,8 +10,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     if (req.method === 'GET') {
-        const sites = await storage.getWebsites();
-        return res.status(200).json(sites);
+        try {
+            const sites = await storage.getWebsites();
+            return res.status(200).json(sites);
+        } catch {
+            console.error('Database unavailable while loading websites.');
+            return res.status(503).json({ error: 'Database unavailable' });
+        }
     }
 
     if (req.method === 'POST') {

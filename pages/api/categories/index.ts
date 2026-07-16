@@ -10,8 +10,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     if (req.method === 'GET') {
-        const categories = await storage.getCategories();
-        return res.status(200).json(categories);
+        try {
+            const categories = await storage.getCategories();
+            return res.status(200).json(categories);
+        } catch {
+            console.error('Database unavailable while loading categories.');
+            return res.status(503).json({ error: 'Database unavailable' });
+        }
     }
 
     if (req.method === 'POST') {

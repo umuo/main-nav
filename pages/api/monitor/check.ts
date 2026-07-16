@@ -1,49 +1,43 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
+import { storage } from '../../../utils/storage';
+import { probePublicWebsite, UnsafeUrlError } from '../../../utils/safeHttpRequest';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { url } = req.body;
+  const { id } = req.body;
+  if (typeof id !== 'string' || !id) {
+    return res.status(400).json({ error: 'Missing site ID' });
+  }
 
   try {
-    const checkUrl = async (method: string) => {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 5000);
-      try {
-        const response = await fetch(url, {
-          method,
-          signal: controller.signal,
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (compatible; SentinelNav/1.0; +http://localhost)'
-          }
-        });
-        clearTimeout(timeout);
-        return response;
-      } catch (error) {
-        clearTimeout(timeout);
-        throw error;
-      }
-    };
-
-    let response = await checkUrl('HEAD').catch(() => null);
-
-    // If HEAD fails (status not ok or network error), try GET
-    if (!response || !response.ok) {
-      try {
-        response = await checkUrl('GET');
-      } catch (err) {
-        // If GET also throws (network error), we consider it offline
-        return res.status(200).json({ status: 'offline' });
-      }
+    const site = await storage.getWebsite(id);
+    if (!site) {
+      return res.status(404).json({ error: 'Site not found' });
     }
 
-    res.status(200).json({
-      status: response && response.ok ? 'online' : 'offline',
-      statusCode: response ? response.status : 0
+    const result = await probePublicWebsite(site.url);
+    const lastChecked = Date.now();
+    const persisted = await storage.updateWebsite(id, {
+      status: result.status,
+      lastChecked,
+      latency: result.latency,
     });
+    if (!persisted) throw new Error('Failed to persist website status');
+
+    return res.status(200).json({ ...result, lastChecked });
   } catch (error) {
-    res.status(200).json({ status: 'offline' });
+    if (error instanceof UnsafeUrlError) {
+      await storage.updateWebsite(id, {
+        status: 'offline',
+        lastChecked: Date.now(),
+        latency: 0,
+      });
+      return res.status(422).json({ error: 'The configured URL is not a safe public HTTP target' });
+    }
+    console.error('Website check failed:', error instanceof Error ? error.message : 'Unknown error');
+    return res.status(500).json({ error: 'Failed to check website' });
   }
 }

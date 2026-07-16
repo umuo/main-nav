@@ -15,7 +15,12 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     // Fetch global theme on mount
     useEffect(() => {
         fetch('/api/config/theme')
-            .then(res => res.json())
+            .then(async res => {
+                if (!res.ok) {
+                    throw new Error(`Theme request failed with status ${res.status}`);
+                }
+                return res.json();
+            })
             .then(data => {
                 if (data.theme) {
                     setThemeState(data.theme);
@@ -34,17 +39,20 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
     const setTheme = async (newTheme: Theme) => {
         // Optimistic update
+        const previousTheme = theme;
         setThemeState(newTheme);
 
         try {
             // Persist globally (Admin only)
-            await fetch('/api/config/theme', {
+            const response = await fetch('/api/config/theme', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ theme: newTheme })
             });
+            if (!response.ok) throw new Error('Theme update was rejected');
         } catch (e) {
             console.error('Failed to save global theme', e);
+            setThemeState(previousTheme);
         }
     };
 

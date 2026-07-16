@@ -1,21 +1,36 @@
 import { Website, Theme, Category } from '../types';
+import type { Website as PrismaWebsite } from '@prisma/client';
 import { prisma } from './prisma';
 
 // --- Prisma Store Implementation ---
 class PrismaStore {
+    private toWebsite(site: PrismaWebsite): Website {
+        const validStatuses: Website['status'][] = ['online', 'offline', 'checking', 'unknown'];
+        const status = validStatuses.includes(site.status as Website['status'])
+            ? site.status as Website['status']
+            : 'unknown';
+
+        return {
+            id: site.id,
+            title: site.title,
+            url: site.url,
+            description: site.description || '',
+            iconUrl: site.iconUrl || '',
+            status,
+            lastChecked: Number(site.lastChecked),
+            latency: site.latency ?? undefined,
+            categoryId: site.categoryId || 'default'
+        };
+    }
+
     async getWebsites(): Promise<Website[]> {
         const sites = await prisma.website.findMany();
-        return sites.map(s => ({
-            id: s.id,
-            title: s.title,
-            url: s.url,
-            description: s.description || '',
-            iconUrl: s.iconUrl || '',
-            status: (s.status as 'online' | 'offline' | 'checking' | 'unknown') || 'unknown',
-            lastChecked: s.lastChecked,
-            latency: s.latency || undefined,
-            categoryId: s.categoryId || 'default'
-        }));
+        return sites.map(site => this.toWebsite(site));
+    }
+
+    async getWebsite(id: string): Promise<Website | null> {
+        const site = await prisma.website.findUnique({ where: { id } });
+        return site ? this.toWebsite(site) : null;
     }
 
     async addWebsite(site: Website): Promise<Website> {
@@ -30,7 +45,7 @@ class PrismaStore {
                 description: site.description,
                 iconUrl: site.iconUrl,
                 status: site.status,
-                lastChecked: site.lastChecked,
+                lastChecked: BigInt(site.lastChecked),
                 latency: site.latency || null,
                 categoryId: categoryId
             }
@@ -48,7 +63,7 @@ class PrismaStore {
                     description: updates.description,
                     iconUrl: updates.iconUrl,
                     status: updates.status,
-                    lastChecked: updates.lastChecked,
+                    lastChecked: updates.lastChecked === undefined ? undefined : BigInt(updates.lastChecked),
                     latency: updates.latency,
                     categoryId: updates.categoryId
                 }

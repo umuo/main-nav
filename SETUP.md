@@ -1,112 +1,57 @@
-# 快速启动指南
+# 快速启动
 
-## 项目已改造为 Next.js
+## 1. 使用受支持的 Node.js
 
-项目已从纯前端 Vite 项目改造为 Next.js 全栈项目，敏感信息已移至服务端处理。
-
-## 改造内容
-
-### 1. 后端 API 路由
-- `/api/auth/login` - 管理员登录验证（密码在服务端验证）
-- `/api/captcha/generate` - 服务端生成验证码
-- `/api/captcha/verify` - 服务端验证验证码
-- `/api/monitor/check` - 服务端代理网站状态检查
-
-### 2. 安全改进
-- 管理员密码使用 bcrypt 加密存储在环境变量
-- 验证码生成和验证在服务端完成
-- 网站监控请求通过服务端代理，避免 CORS 问题
-- 敏感配置从前端代码移除
-
-### 3. 环境变量
-所有敏感信息存储在 `.env.local` 文件中：
-- `ADMIN_USERNAME` - 管理员用户名
-- `ADMIN_PASSWORD_HASH` - 管理员密码的 bcrypt hash
-
-## 安装步骤
-
-### 1. 清理旧依赖
 ```bash
-rm -rf node_modules package-lock.json
+nvm use
 ```
 
-### 2. 安装新依赖
+项目固定使用 Node.js 22.12–22.x。Node 23 不在 Prisma 7 的支持范围内。
+
+## 2. 安装依赖
+
 ```bash
 npm install
 ```
 
-### 3. 配置环境变量
-确保 `.env.local` 文件存在并包含：
-```env
-ADMIN_USERNAME=admin
-ADMIN_PASSWORD_HASH=$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy
-```
+## 3. 本地直接启动
 
-默认密码是 `admin123`
-
-### 4. 生成自定义密码（可选）
-```bash
-node scripts/generate-password.js 你的新密码
-```
-
-将输出的 hash 复制到 `.env.local` 文件中
-
-### 5. 启动开发服务器
 ```bash
 npm run dev
 ```
 
-访问 http://localhost:3000
+没有 `.env.local` 或 `DATABASE_URL` 时，项目会自动：
 
-## 生产部署
+1. 在 `data/pglite` 启动持久化本地数据库；
+2. 应用已有 Prisma 迁移；
+3. 生成仅本次运行有效的管理员密码和安全密钥；
+4. 启动 Next.js。
 
-### 1. 构建
+管理员账号与随机密码会显示在终端中。停止开发服务时，本地数据库服务会自动关闭。
+
+访问 [http://localhost:3000](http://localhost:3000)。
+
+## 4. 使用外部 PostgreSQL
+
 ```bash
-npm run build
+cp .env.sample .env.local
+node scripts/generate-password.mjs '你的强密码'
+openssl rand -base64 48
+openssl rand -base64 48
 ```
 
-### 2. 启动
+编辑 `.env.local`，填写 PostgreSQL 地址、管理员账号、密码 Hash，以及两个不同的随机密钥。配置 `DATABASE_URL` 后，`npm run dev` 会使用该数据库并自动应用迁移，不再启动本地 PGlite。
+
+也可以手动初始化外部数据库：
+
 ```bash
-npm start
+npm run db:deploy
 ```
 
-## 主要变化
+只启动 Next.js、不自动启动数据库或执行迁移：
 
-### 前端
-- 使用 Next.js Pages Router
-- 验证码改为简单的数学题（服务端验证）
-- 登录验证通过 API 调用
-- 网站监控通过 API 调用
-
-### 后端
-- 新增 API 路由处理敏感操作
-- 使用 bcryptjs 进行密码加密
-- 服务端代理网站状态检查
-
-## 注意事项
-
-1. 生产环境务必修改默认密码
-2. `.env.local` 文件不要提交到 Git
-3. 确保服务器环境变量正确配置
-4. 建议使用 HTTPS 部署
-
-## 故障排查
-
-### 端口被占用
 ```bash
-# 修改端口
-npm run dev -- -p 3001
+npm run dev:next
 ```
 
-### 依赖安装失败
-```bash
-# 使用国内镜像
-npm install --registry=https://registry.npmmirror.com
-```
-
-### 构建失败
-```bash
-# 清理缓存
-rm -rf .next
-npm run build
-```
+完整部署、迁移和安全说明见 `README.md`。

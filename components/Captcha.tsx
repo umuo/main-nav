@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
 import { useTranslation } from '../contexts/LanguageContext';
 
@@ -13,9 +13,10 @@ const Captcha: React.FC<CaptchaProps> = ({ onValidate }) => {
   const [token, setToken] = useState('');
   const [userInput, setUserInput] = useState('');
 
-  const generateCaptcha = async () => {
+  const generateCaptcha = useCallback(async () => {
     try {
       const res = await fetch('/api/captcha/generate');
+      if (!res.ok) throw new Error('Captcha request failed');
       const data = await res.json();
       setNum1(data.num1);
       setNum2(data.num2);
@@ -25,11 +26,13 @@ const Captcha: React.FC<CaptchaProps> = ({ onValidate }) => {
     } catch (error) {
       console.error('Failed to generate captcha:', error);
     }
-  };
+  }, [onValidate]);
 
   useEffect(() => {
-    generateCaptcha();
-  }, []);
+    // Loading a new server challenge after mount intentionally resets the form state.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void generateCaptcha();
+  }, [generateCaptcha]);
 
   const handleInputChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
@@ -44,7 +47,7 @@ const Captcha: React.FC<CaptchaProps> = ({ onValidate }) => {
         });
         const data = await res.json();
         onValidate(data.valid, token, val);
-      } catch (error) {
+      } catch {
         onValidate(false, token, val);
       }
     } else {
@@ -53,17 +56,19 @@ const Captcha: React.FC<CaptchaProps> = ({ onValidate }) => {
   };
 
   return (
-    <div className="flex flex-col gap-3">
-      <div className="flex items-center gap-2">
-        <div className="px-4 py-3 bg-gray-100 rounded border border-gray-300 text-lg font-mono font-bold text-gray-700">
+    <div className="flex flex-col gap-2.5">
+      <div className="flex items-stretch gap-2">
+        <div className="flex min-h-11 flex-1 items-center justify-center rounded-xl border border-[var(--glass-border)] bg-[var(--surface-muted)] px-4 font-mono text-base font-bold tracking-wider text-[var(--text-primary)]">
           {num1} + {num2} = ?
         </div>
         <button
           type="button"
           onClick={generateCaptcha}
-          className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-full transition-colors"
+          className="icon-button flex w-11 items-center justify-center rounded-xl"
+          title={t('login.refreshCaptcha')}
+          aria-label={t('login.refreshCaptcha')}
         >
-          <RefreshCw size={20} />
+          <RefreshCw size={17} />
         </button>
       </div>
       <input
@@ -71,7 +76,7 @@ const Captcha: React.FC<CaptchaProps> = ({ onValidate }) => {
         placeholder={t('login.enterCode')}
         value={userInput}
         onChange={handleInputChange}
-        className="w-full px-4 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:outline-none"
+        className="field-control rounded-xl px-4 py-3 text-sm"
       />
     </div>
   );

@@ -1,5 +1,19 @@
 import React, { useState } from 'react';
-import { Plus, Trash2, Edit2, X, Save, Search, LogOut, Palette, Download, Upload, Folder, Layers } from 'lucide-react';
+import {
+  Download,
+  Edit2,
+  Folder,
+  Globe2,
+  LogOut,
+  Palette,
+  Plus,
+  Save,
+  Search,
+  ShieldCheck,
+  Trash2,
+  Upload,
+  X,
+} from 'lucide-react';
 import { Website, Category, Theme } from '../types';
 import { useTranslation } from '../contexts/LanguageContext';
 import { useTheme } from '../contexts/ThemeContext';
@@ -160,7 +174,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
           url: site.url,
           description: site.description,
           iconUrl: site.iconUrl,
-          categoryId: site.categoryId // valid if importing from same system
+          categoryId: site.categoryId, // valid if importing from same system
+          categoryName: site.categoryName
         }));
 
         const res = await fetch('/api/sites/import', {
@@ -190,42 +205,74 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     site.url.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const themes: { id: Theme; name: string; color: string }[] = [
-    { id: 'vibe', name: 'Vibe', color: 'bg-purple-900' },
-    { id: 'sunset', name: 'Sunset', color: 'bg-red-900' },
-    { id: 'ocean', name: 'Ocean', color: 'bg-blue-900' },
-    { id: 'minimal', name: 'Minimal', color: 'bg-gray-100' },
+  const themes: { id: Theme; name: string; previewClass: string }[] = [
+    { id: 'vibe', name: 'Vibe', previewClass: 'theme-vibe' },
+    { id: 'sunset', name: 'Sunset', previewClass: 'theme-sunset' },
+    { id: 'ocean', name: 'Ocean', previewClass: 'theme-ocean' },
+    { id: 'minimal', name: 'Minimal', previewClass: 'theme-minimal' },
   ];
 
+  const onlineCount = websites.filter(site => site.status === 'online').length;
+
   return (
-    <div className="space-y-6">
-      {/* Settings Panel */}
-      <div className="glass-panel p-6 rounded-xl flex flex-col md:flex-row gap-6 md:items-center justify-between">
-        <div>
-          <h3 className="text-lg font-bold text-[var(--text-primary)] mb-4 flex items-center gap-2">
-            <Palette size={20} />
-            Appearance
+    <div className="space-y-5">
+      <section className="hero-panel rounded-[1.75rem] p-5 sm:p-7">
+        <div className="relative z-10 flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <span className="eyebrow"><ShieldCheck size={14} /> {t('dashboard.workspace')}</span>
+            <h2 className="mt-3 text-2xl font-semibold tracking-[-0.035em] text-[var(--text-primary)] sm:text-3xl">{t('admin.title')}</h2>
+            <p className="mt-2 text-sm text-[var(--text-secondary)]">{t('admin.subtitle')}</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="secondary-button flex h-10 items-center gap-2 rounded-xl px-3.5 text-sm font-semibold">
+              <Globe2 size={15} className="text-[var(--accent-color)]" />
+              {t('admin.serviceCount', { count: websites.length })}
+              <span className="text-[var(--status-online-text)]">· {onlineCount} {t('dashboard.online')}</span>
+            </span>
+            <button
+              onClick={onLogout}
+              className="flex h-10 items-center gap-2 rounded-xl border border-[var(--status-offline-border)] bg-[var(--status-offline-bg)] px-3.5 text-sm font-semibold text-[var(--status-offline-text)] transition-colors hover:brightness-110"
+              title={t('admin.logout')}
+            >
+              <LogOut size={16} />
+              <span className="hidden sm:inline">{t('admin.logout')}</span>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <section className="control-surface flex flex-col gap-5 rounded-2xl p-4 lg:flex-row lg:items-center lg:justify-between">
+        <div className="min-w-0">
+          <h3 className="flex items-center gap-2 text-sm font-semibold text-[var(--text-primary)]">
+            <Palette size={16} className="text-[var(--accent-color)]" />
+            {t('admin.appearance')}
           </h3>
-          <div className="flex gap-4">
-            {themes.map((t) => (
+          <p className="mt-1 text-xs text-[var(--text-tertiary)]">{t('admin.appearanceSubtitle')}</p>
+          <div className="mt-3 flex flex-wrap gap-2 pb-1">
+            {themes.map((themeOption) => (
               <button
-                key={t.id}
-                onClick={() => setTheme(t.id)}
-                className={`flex flex-col items-center gap-2 transition-transform hover:scale-105 ${theme === t.id ? 'ring-2 ring-[var(--text-primary)] rounded-lg p-1' : ''}`}
+                key={themeOption.id}
+                onClick={() => setTheme(themeOption.id)}
+                className={`flex flex-none items-center gap-2 rounded-xl border px-2 py-1.5 text-xs font-semibold transition-all ${
+                  theme === themeOption.id
+                    ? 'border-[var(--accent-color)] bg-[var(--accent-soft)] text-[var(--accent-color)]'
+                    : 'border-[var(--glass-border)] bg-[var(--surface-muted)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                }`}
+                aria-pressed={theme === themeOption.id}
               >
-                <div className={`w-12 h-12 rounded-lg shadow-lg border border-[var(--text-secondary)] ${t.color}`}></div>
-                <span className="text-xs text-[var(--text-secondary)] font-medium">{t.name}</span>
+                <span className={`theme-preview ${themeOption.previewClass} h-7 w-9 rounded-lg`} />
+                {themeOption.name}
               </button>
             ))}
           </div>
         </div>
 
-        <div className="flex gap-2 mt-4 md:mt-0">
+        <div className="flex flex-wrap gap-2 lg:justify-end">
           <button
             onClick={() => setIsCategoryManagerOpen(true)}
-            className="flex items-center gap-2 px-4 py-2 glass-panel text-[var(--text-primary)] rounded-lg hover:bg-white/10 transition-colors text-sm font-medium"
+            className="secondary-button flex h-10 items-center gap-2 rounded-xl px-3.5 text-sm font-semibold"
           >
-            <Folder size={18} />
+            <Folder size={16} />
             {t('admin.manageCategories')}
           </button>
           <input
@@ -237,89 +284,95 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
           />
           <button
             onClick={handleImportClick}
-            className="flex items-center gap-2 px-4 py-2 glass-panel text-[var(--text-primary)] rounded-lg hover:bg-white/10 transition-colors text-sm font-medium"
+            className="icon-button flex h-10 w-10 items-center justify-center rounded-xl"
             title={t('admin.import')}
           >
-            <Upload size={18} />
+            <Upload size={16} />
           </button>
           <button
             onClick={handleExport}
-            className="flex items-center gap-2 px-4 py-2 glass-panel text-[var(--text-primary)] rounded-lg hover:bg-white/10 transition-colors text-sm font-medium"
+            className="icon-button flex h-10 w-10 items-center justify-center rounded-xl"
             title={t('admin.export')}
           >
-            <Download size={18} />
-          </button>
-          <button
-            onClick={onLogout}
-            className="flex items-center gap-2 px-4 py-2 bg-red-500/10 text-red-500 border border-red-500/20 rounded-lg hover:bg-red-500/20 transition-colors text-sm font-medium"
-            title={t('admin.logout')}
-          >
-            <LogOut size={18} />
+            <Download size={16} />
           </button>
         </div>
-      </div>
+      </section>
 
       {/* Action Bar */}
-      <div className="flex flex-col md:flex-row gap-4 justify-between items-center">
-        <div className="relative w-full md:w-96 group">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-secondary)] group-focus-within:text-[var(--accent-color)] transition-colors" size={20} />
+      <div className="flex flex-col items-stretch justify-between gap-3 sm:flex-row sm:items-center">
+        <div className="relative w-full sm:max-w-sm">
+          <Search className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--text-tertiary)]" size={16} />
           <input
             type="text"
             placeholder={t('admin.searchPlaceholder')}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-3 glass-panel rounded-xl text-[var(--text-primary)] placeholder-gray-500 focus:ring-2 focus:ring-[var(--accent-color)] outline-none transition-all"
+            className="field-control h-11 rounded-xl py-2 pl-10 pr-4 text-sm"
           />
         </div>
         <button
           onClick={handleOpenAdd}
-          className="w-full md:w-auto flex items-center justify-center gap-2 bg-[var(--accent-color)] text-white px-6 py-3 rounded-xl hover:opacity-90 transition-all font-semibold shadow-lg shadow-pink-500/20"
+          className="primary-button flex h-11 w-full items-center justify-center gap-2 rounded-xl px-5 text-sm font-semibold sm:w-auto"
         >
-          <Plus size={20} />
+          <Plus size={17} />
           {t('admin.addWebsite')}
         </button>
       </div>
 
       {/* Website Table */}
-      <div className="glass-panel overflow-hidden rounded-2xl border border-white/10">
+      <div className="glass-panel overflow-hidden rounded-2xl">
         <div className="overflow-x-auto">
           <table className="w-full text-left">
             <thead>
-              <tr className="border-b border-white/10 bg-white/5">
-                <th className="px-6 py-4 font-semibold text-[var(--text-primary)]">{t('admin.table.title')}</th>
-                <th className="px-6 py-4 font-semibold text-[var(--text-primary)] hidden sm:table-cell">{t('admin.table.url')}</th>
-                <th className="px-6 py-4 font-semibold text-[var(--text-primary)] hidden md:table-cell">{t('admin.table.category')}</th>
-                <th className="px-6 py-4 font-semibold text-[var(--text-primary)] text-right">{t('admin.table.actions')}</th>
+              <tr className="border-b border-[var(--glass-border)] bg-[var(--surface-muted)] text-xs uppercase tracking-[0.08em] text-[var(--text-tertiary)]">
+                <th className="px-5 py-4 font-semibold">{t('admin.table.title')}</th>
+                <th className="hidden px-5 py-4 font-semibold sm:table-cell">{t('admin.table.url')}</th>
+                <th className="hidden px-5 py-4 font-semibold lg:table-cell">{t('admin.table.category')}</th>
+                <th className="hidden px-5 py-4 font-semibold md:table-cell">{t('admin.table.status')}</th>
+                <th className="px-5 py-4 text-right font-semibold">{t('admin.table.actions')}</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-white/5">
+            <tbody className="divide-y divide-[var(--glass-border)]">
               {filteredSites.map(site => (
-                <tr key={site.id} className="hover:bg-white/5 transition-colors">
-                  <td className="px-6 py-4">
-                    <div className="font-medium text-[var(--text-primary)]">{site.title}</div>
-                    <div className="text-xs text-[var(--text-secondary)] sm:hidden truncate max-w-[150px]">{site.url}</div>
+                <tr key={site.id} className="admin-table-row">
+                  <td className="px-5 py-4">
+                    <div className="flex items-center gap-3">
+                      <span className="site-icon flex h-9 w-9 flex-none items-center justify-center rounded-xl text-[var(--accent-color)]">
+                        <Globe2 size={15} />
+                      </span>
+                      <div className="min-w-0">
+                        <div className="truncate font-semibold text-[var(--text-primary)]">{site.title}</div>
+                        <div className="mt-0.5 max-w-[170px] truncate text-xs text-[var(--text-tertiary)] sm:hidden">{site.url}</div>
+                      </div>
+                    </div>
                   </td>
-                  <td className="px-6 py-4 text-sm text-[var(--text-secondary)] hidden sm:table-cell truncate max-w-[200px]">
-                    {site.url}
+                  <td className="hidden max-w-[240px] px-5 py-4 text-sm text-[var(--text-secondary)] sm:table-cell">
+                    <span className="block truncate">{site.url}</span>
                   </td>
-                  <td className="px-6 py-4 text-sm text-[var(--text-secondary)] hidden md:table-cell">
-                    {categories.find(c => c.id === site.categoryId)?.name || t('dashboard.general')}
+                  <td className="hidden px-5 py-4 text-sm text-[var(--text-secondary)] lg:table-cell">
+                    <span className="rounded-lg bg-[var(--surface-muted)] px-2.5 py-1.5 text-xs font-semibold">
+                      {categories.find(c => c.id === site.categoryId)?.name || t('dashboard.general')}
+                    </span>
                   </td>
-                  <td className="px-6 py-4 text-right">
+                  <td className="hidden px-5 py-4 md:table-cell">
+                    <span className={`status-badge status-${site.status}`}>{t(`status.${site.status}`)}</span>
+                  </td>
+                  <td className="px-5 py-4 text-right">
                     <div className="flex items-center justify-end gap-2">
                       <button
                         onClick={() => handleOpenEdit(site)}
-                        className="p-2 text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-white/10 rounded-lg transition-colors"
+                        className="icon-button flex h-9 w-9 items-center justify-center rounded-xl"
                         title={t('admin.edit')}
                       >
-                        <Edit2 size={18} />
+                        <Edit2 size={15} />
                       </button>
                       <button
                         onClick={() => onDelete(site.id)}
-                        className="p-2 text-[var(--text-secondary)] hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
+                        className="flex h-9 w-9 items-center justify-center rounded-xl border border-transparent text-[var(--text-secondary)] transition-colors hover:border-[var(--status-offline-border)] hover:bg-[var(--status-offline-bg)] hover:text-[var(--status-offline-text)]"
                         title={t('admin.delete')}
                       >
-                        <Trash2 size={18} />
+                        <Trash2 size={15} />
                       </button>
                     </div>
                   </td>
@@ -327,7 +380,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
               ))}
               {filteredSites.length === 0 && (
                 <tr>
-                  <td colSpan={4} className="px-6 py-12 text-center text-[var(--text-secondary)]">
+                  <td colSpan={5} className="px-6 py-14 text-center text-sm text-[var(--text-secondary)]">
                     {t('admin.noSitesFound')}
                   </td>
                 </tr>
@@ -340,46 +393,46 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       {/* Website Edit/Add Modal */}
       {
         isModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
-            <div className="glass-panel w-full max-w-lg rounded-2xl p-6 relative animate-slide-up border border-white/20 shadow-2xl">
+          <div className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in">
+            <div className="modal-panel relative w-full max-w-lg rounded-[1.5rem] p-6 animate-slide-up sm:p-7">
               <button
                 onClick={() => setIsModalOpen(false)}
-                className="absolute top-4 right-4 text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
+                className="icon-button absolute right-4 top-4 flex h-9 w-9 items-center justify-center rounded-xl"
               >
-                <X size={24} />
+                <X size={17} />
               </button>
-              <h3 className="text-xl font-bold text-[var(--text-primary)] mb-6">
+              <h3 className="mb-6 pr-12 text-xl font-semibold tracking-[-0.025em] text-[var(--text-primary)]">
                 {editingId ? t('admin.modal.editTitle') : t('admin.modal.addTitle')}
               </h3>
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-[var(--text-secondary)] mb-1">{t('admin.modal.titleLabel')}</label>
+                  <label className="mb-1.5 block text-sm font-semibold text-[var(--text-secondary)]">{t('admin.modal.titleLabel')}</label>
                   <input
                     type="text"
                     required
                     value={title}
                     onChange={(e) => setTitle(e.target.value)}
-                    className="w-full px-4 py-2 bg-black/20 border border-white/10 rounded-xl text-[var(--text-primary)] focus:ring-2 focus:ring-[var(--accent-color)] outline-none"
+                    className="field-control rounded-xl px-4 py-2.5 text-sm"
                     placeholder={t('admin.modal.titlePlaceholder')}
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-[var(--text-secondary)] mb-1">{t('admin.modal.urlLabel')}</label>
+                  <label className="mb-1.5 block text-sm font-semibold text-[var(--text-secondary)]">{t('admin.modal.urlLabel')}</label>
                   <input
                     type="text"
                     required
                     value={url}
                     onChange={(e) => setUrl(e.target.value)}
-                    className="w-full px-4 py-2 bg-black/20 border border-white/10 rounded-xl text-[var(--text-primary)] focus:ring-2 focus:ring-[var(--accent-color)] outline-none"
+                    className="field-control rounded-xl px-4 py-2.5 text-sm"
                     placeholder="https://example.com"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-[var(--text-secondary)] mb-1">{t('admin.modal.categoryLabel')}</label>
+                  <label className="mb-1.5 block text-sm font-semibold text-[var(--text-secondary)]">{t('admin.modal.categoryLabel')}</label>
                   <select
                     value={selectedCategoryId}
                     onChange={(e) => setSelectedCategoryId(e.target.value)}
-                    className="w-full px-4 py-2 bg-black/20 border border-white/10 rounded-xl text-[var(--text-primary)] focus:ring-2 focus:ring-[var(--accent-color)] outline-none [&>option]:bg-gray-900"
+                    className="field-control rounded-xl px-4 py-2.5 text-sm [&>option]:bg-[var(--page-bg)]"
                   >
                     {categories.map(cat => (
                       <option key={cat.id} value={cat.id}>
@@ -389,11 +442,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-[var(--text-secondary)] mb-1">{t('admin.modal.descLabel')}</label>
+                  <label className="mb-1.5 block text-sm font-semibold text-[var(--text-secondary)]">{t('admin.modal.descLabel')}</label>
                   <textarea
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
-                    className="w-full px-4 py-2 bg-black/20 border border-white/10 rounded-xl text-[var(--text-primary)] focus:ring-2 focus:ring-[var(--accent-color)] outline-none h-24 resize-none"
+                    className="field-control h-24 resize-none rounded-xl px-4 py-2.5 text-sm"
                     placeholder={t('admin.modal.descPlaceholder')}
                   />
                 </div>
@@ -407,7 +460,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </button>
                   <button
                     type="submit"
-                    className="bg-[var(--accent-color)] text-white px-6 py-2 rounded-xl hover:opacity-90 transition-all font-medium flex items-center gap-2"
+                    className="primary-button flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold"
                   >
                     <Save size={18} />
                     {t('admin.modal.save')}
@@ -422,15 +475,15 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       {/* Category Manager Modal */}
       {
         isCategoryManagerOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
-            <div className="glass-panel w-full max-w-md rounded-2xl p-6 relative animate-slide-up border border-white/20 shadow-2xl">
+          <div className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in">
+            <div className="modal-panel relative w-full max-w-md rounded-[1.5rem] p-6 animate-slide-up sm:p-7">
               <button
                 onClick={() => setIsCategoryManagerOpen(false)}
-                className="absolute top-4 right-4 text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
+                className="icon-button absolute right-4 top-4 flex h-9 w-9 items-center justify-center rounded-xl"
               >
-                <X size={24} />
+                <X size={17} />
               </button>
-              <h3 className="text-lg font-bold text-[var(--text-primary)] mb-6">{t('admin.categoryModal.title')}</h3>
+              <h3 className="mb-6 pr-12 text-lg font-semibold tracking-[-0.025em] text-[var(--text-primary)]">{t('admin.categoryModal.title')}</h3>
 
               <form onSubmit={handleCategorySubmit} className="mb-6 flex gap-2">
                 <input
@@ -438,20 +491,20 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   value={categoryName}
                   onChange={(e) => setCategoryName(e.target.value)}
                   placeholder={t('admin.categoryModal.namePlaceholder')}
-                  className="flex-1 px-4 py-2 bg-black/20 border border-white/10 rounded-xl text-[var(--text-primary)] focus:ring-2 focus:ring-[var(--accent-color)] outline-none"
+                  className="field-control min-w-0 flex-1 rounded-xl px-4 py-2.5 text-sm"
                 />
                 {editingCategoryId ? (
                   <>
                     <button
                       type="submit"
-                      className="p-2 bg-[var(--accent-color)] text-white rounded-xl hover:opacity-90 transition-all"
+                      className="primary-button flex h-10 w-10 items-center justify-center rounded-xl"
                     >
                       <Save size={20} />
                     </button>
                     <button
                       type="button"
                       onClick={cancelEditCategory}
-                      className="p-2 bg-white/10 text-[var(--text-primary)] rounded-xl hover:bg-white/20 transition-all"
+                      className="icon-button flex h-10 w-10 items-center justify-center rounded-xl"
                     >
                       <X size={20} />
                     </button>
@@ -460,7 +513,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <button
                     type="submit"
                     disabled={!categoryName.trim()}
-                    className="p-2 bg-[var(--accent-color)] text-white rounded-xl hover:opacity-90 transition-all disabled:opacity-50"
+                    className="primary-button flex h-10 w-10 items-center justify-center rounded-xl disabled:opacity-50"
                   >
                     <Plus size={20} />
                   </button>
@@ -469,10 +522,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
               <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
                 {categories.map(cat => (
-                  <div key={cat.id} className="flex items-center justify-between p-3 bg-white/5 rounded-xl border border-white/5 group hover:border-[var(--glass-border)] transition-colors">
+                  <div key={cat.id} className="group flex items-center justify-between rounded-xl border border-[var(--glass-border)] bg-[var(--surface-muted)] p-3 transition-colors hover:border-[var(--accent-color)]">
                     <span className="font-medium text-[var(--text-primary)]">{cat.id === 'default' ? t('dashboard.general') : cat.name}</span>
                     {cat.id !== 'default' && (
-                      <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div className="flex gap-1 opacity-70 transition-opacity group-hover:opacity-100">
                         <button
                           onClick={() => startEditCategory(cat)}
                           className="p-1.5 text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-white/10 rounded-lg transition-colors"
