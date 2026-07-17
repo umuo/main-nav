@@ -41,7 +41,9 @@ cp .env.sample .env.local
 
 | 变量 | 用途 |
 | --- | --- |
-| `DATABASE_URL` | PostgreSQL 连接字符串 |
+| `DATABASE_URL` | 运行时 PostgreSQL 池化连接字符串；Serverless 不应使用直连地址 |
+| `DIRECT_DATABASE_URL` | Prisma 迁移使用的数据库直连地址 |
+| `DATABASE_POOL_MAX` | 单个函数实例的连接池上限，默认 `3`、最大 `10` |
 | `ADMIN_USERNAME` | 管理员账号 |
 | `ADMIN_PASSWORD_HASH` | 管理员密码的 bcrypt Hash |
 | `JWT_SECRET` | JWT 签名密钥，至少 32 个字符 |
@@ -49,6 +51,7 @@ cp .env.sample .env.local
 | `TURNSTILE_SECRET_KEY` | Cloudflare Turnstile 服务端密钥，不得暴露给浏览器 |
 | `TURNSTILE_ALLOWED_HOSTNAMES` | 可选，逗号分隔的 Siteverify 主机名白名单 |
 | `TRUST_PROXY_HEADERS` | 只有反向代理会清洗并重写来源 IP 请求头时才设为 `true` |
+| `CRON_SECRET` | Vercel Cron 调用批量监控接口的随机密钥，至少 16 个字符 |
 
 生成密码 Hash：
 
@@ -63,6 +66,10 @@ openssl rand -base64 48
 ```
 
 在 Cloudflare 控制台创建 Managed Turnstile Widget，将正式域名加入 Hostname Management，再把站点密钥与服务端密钥写入生产环境。官方测试密钥只由 `npm run dev` 在未配置密钥时自动使用，生产环境会拒绝测试密钥。
+
+在 Vercel 等 Serverless 环境中，`DATABASE_URL` 必须使用数据库提供商给出的池化运行时地址；Prisma Postgres 对应 `pooled.db.prisma.io`。`DIRECT_DATABASE_URL` 保留直连地址，仅供 `prisma migrate deploy` 等 CLI 操作。不要把 `prisma+postgres://` Accelerate 地址传给当前的 `PrismaPg` 适配器。
+
+`vercel.json` 默认每天 03:00 UTC 调用一次服务器批量探测，兼容 Vercel Hobby 套餐。配置 `CRON_SECRET` 后 Vercel 会以 Bearer Token 调用受保护接口；Pro 套餐如需更高频率，可以调整 cron 表达式。
 
 应用默认使用 TCP 连接地址做登录限流。如果部署在 Nginx、Cloudflare 或托管平台之后，确认公网无法绕过代理直连源站，并由代理删除访客传入的 `CF-Connecting-IP`、`X-Real-IP`、`X-Forwarded-For` 后，再设置 `TRUST_PROXY_HEADERS=true`；否则攻击者可能伪造来源 IP 绕过限流。
 
@@ -122,8 +129,9 @@ npm run db:studio   # 打开 Prisma Studio
 - 首页会从当前浏览器直接向目标发送 `no-cors` 请求，用于判断用户所在网络是否可达；结果只保存在该浏览器的 `localStorage`，不会写入数据库。
 - 跨域浏览器探测无法读取真实 HTTP 状态码，因此“可访问”表示请求可达，不等同于 HTTP 2xx；探测目标也会看到用户的出口 IP。
 - 对私网 IP、`.local` 和 localhost，页面会遵循浏览器的 Local Network Access 权限：后台刷新不会主动弹框，用户点击检测时才会请求授权。生产环境必须使用 HTTPS；未获授权、非安全上下文或不支持该能力的浏览器可能无法探测 HTTP 内网地址。
-- 服务器侧探测通过 `/api/monitor/check` 执行：浏览器只提交站点 ID，服务端从数据库取出 URL，拒绝本机、私网、保留地址、非标准端口和不安全重定向。
-- 服务器侧状态、检测时间和延迟会写回 PostgreSQL，并在首页作为参考状态展示。
+- 公开首页不会触发服务器侧探测，只读取 PostgreSQL 中最近一次服务器结果，避免访客造成函数和数据库请求风暴。
+- Vercel Cron 通过受保护的 `/api/monitor/run` 批量探测，固定并发为 4；管理员新增或编辑站点时可通过 `/api/monitor/check` 立即检测单站。
+- 服务端会拒绝本机、私网、保留地址、非标准端口和不安全重定向，并在 IPv4/IPv6 公网地址之间回退；状态、检测时间和延迟写回 PostgreSQL。
 - 管理写接口要求有效的 JWT HttpOnly Cookie。
 - 语言偏好保存在浏览器；主题配置保存在数据库并对所有访客生效。
 
@@ -138,13 +146,15 @@ npm run db:studio   # 打开 Prisma Studio
 - `GET|POST /api/categories`：读取或新增分类
 - `PUT|DELETE /api/categories/:id`：编辑或删除分类
 - `GET|POST /api/config/theme`：读取或修改主题
-- `POST /api/monitor/check`：检测已配置的网站，Body 为 `{ "id": "站点 ID" }`
+- `POST /api/monitor/check`：管理员检测单个已配置网站，Body 为 `{ "id": "站点 ID" }`
+- `GET|POST /api/monitor/run`：Cron Bearer Token 或管理员鉴权后的限并发批量检测
 - `GET /api/debug`：管理员鉴权后的数量诊断信息
 
 ## 安全边界
 
 - 服务器侧只监控公网 HTTP/HTTPS 地址，并固定使用 80/443 端口；浏览器侧探测遵循访客自身网络与浏览器安全策略。
 - DNS 解析结果和每次重定向都会重新校验；连接固定到已校验的 IP，避免 DNS 重绑定。
+- 公开访客不能触发服务器出站请求；单站与批量服务器探测分别要求管理员会话或 Cron Bearer Token。
 - 密码 Hash、JWT 密钥和 Turnstile 服务端密钥仅从服务端环境变量读取。
 - 登录接口始终通过 Cloudflare Siteverify 验证 Turnstile 令牌，并校验 action；正式环境还可通过 `TURNSTILE_ALLOWED_HOSTNAMES` 校验主机名。
 - Turnstile 令牌只能使用一次且五分钟后过期；失败登录会重置挑战。

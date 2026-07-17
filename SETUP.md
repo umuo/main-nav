@@ -39,7 +39,7 @@ node scripts/generate-password.mjs '你的强密码'
 openssl rand -base64 48
 ```
 
-编辑 `.env.local`，填写 PostgreSQL 地址、管理员账号、密码 Hash、JWT 随机密钥，以及 Cloudflare Turnstile 的站点密钥和服务端密钥。配置 `DATABASE_URL` 后，`npm run dev` 会使用该数据库并自动应用迁移，不再启动本地 PGlite；未配置 Turnstile 密钥的本地开发会自动使用官方测试密钥。
+编辑 `.env.local`，填写池化 `DATABASE_URL`、迁移专用 `DIRECT_DATABASE_URL`、管理员账号、密码 Hash、JWT 随机密钥，以及 Cloudflare Turnstile 的站点密钥和服务端密钥。Vercel 部署还需要至少 16 个字符的 `CRON_SECRET`。配置 `DATABASE_URL` 后，`npm run dev` 会使用该数据库并自动应用迁移，不再启动本地 PGlite；未配置 Turnstile 密钥的本地开发会自动使用官方测试密钥。
 
 也可以手动初始化外部数据库：
 

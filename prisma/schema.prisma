@@ -10,17 +10,19 @@ datasource db {
 }
 
 model Website {
-  id          String   @id @default(uuid())
-  title       String
-  url         String
-  description String?
-  iconUrl     String?
-  status      String   @default("unknown")
-  lastChecked BigInt   @default(0)
-  latency     Int?
-  categoryId  String?
-  
-  category    Category? @relation(fields: [categoryId], references: [id])
+  id               String  @id @default(uuid())
+  title            String
+  url              String
+  description      String?
+  iconUrl          String?
+  status           String  @default("unknown")
+  lastChecked      BigInt  @default(0)
+  latency          Int?
+  serverStatusCode Int?
+  serverReason     String?
+  categoryId       String?
+
+  category Category? @relation(fields: [categoryId], references: [id])
 
   @@index([categoryId])
 }

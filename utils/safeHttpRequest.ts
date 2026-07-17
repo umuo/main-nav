@@ -4,7 +4,15 @@ import https from 'node:https';
 import net from 'node:net';
 
 const REQUEST_TIMEOUT_MS = 30_000;
+const ADDRESS_ATTEMPT_TIMEOUT_MS = 10_000;
 const MAX_REDIRECTS = 5;
+
+export type ServerProbeFailureReason =
+    | 'connect-error'
+    | 'dns-error'
+    | 'http-error'
+    | 'timeout'
+    | 'tls-error';
 
 export class UnsafeUrlError extends Error {
     constructor(message: string) {
@@ -13,16 +21,32 @@ export class UnsafeUrlError extends Error {
     }
 }
 
-interface ResolvedTarget {
-    url: URL;
+class ProbeRequestError extends Error {
+    constructor(public readonly reason: ServerProbeFailureReason, message: string) {
+        super(message);
+        this.name = 'ProbeRequestError';
+    }
+}
+
+interface ResolvedAddress {
     address: string;
     family: 4 | 6;
+}
+
+interface ResolvedTarget {
+    url: URL;
+    addresses: ResolvedAddress[];
+}
+
+interface RequestResult {
+    statusCode: number;
 }
 
 export interface ProbeResult {
     status: 'online' | 'offline';
     statusCode: number;
     latency: number;
+    reason?: ServerProbeFailureReason;
 }
 
 function ipv4ToNumber(address: string): number | null {
@@ -106,16 +130,12 @@ function isPublicIpv6(address: string): boolean {
     const groups = parseIpv6(address);
     if (!groups) return false;
 
-    // IPv4-mapped IPv6 addresses must inherit the IPv4 safety decision.
     if (groups.slice(0, 5).every(group => group === 0) && groups[5] === 0xffff) {
         const ipv4 = `${groups[6] >>> 8}.${groups[6] & 0xff}.${groups[7] >>> 8}.${groups[7] & 0xff}`;
         return isPublicIpv4(ipv4);
     }
 
-    // Only globally routable unicast space is accepted.
     if ((groups[0] & 0xe000) !== 0x2000) return false;
-
-    // Documentation, Teredo, benchmarking/ORCHID and 6to4 ranges are not valid targets.
     if (groups[0] === 0x2001 && (groups[1] <= 0x01ff || groups[1] === 0x0db8)) return false;
     if (groups[0] === 0x2002) return false;
 
@@ -129,16 +149,46 @@ export function isPublicIpAddress(address: string): boolean {
     return false;
 }
 
+const isTimeoutError = (error: unknown) => (
+    error instanceof ProbeRequestError && error.reason === 'timeout'
+);
+
+const classifyNetworkError = (error: unknown): ProbeRequestError => {
+    if (error instanceof ProbeRequestError) return error;
+
+    const code = typeof error === 'object' && error && 'code' in error
+        ? String(error.code)
+        : '';
+    if (code === 'ETIMEDOUT' || code === 'ESOCKETTIMEDOUT') {
+        return new ProbeRequestError('timeout', 'Request timed out');
+    }
+    if (code === 'ENOTFOUND' || code === 'EAI_AGAIN') {
+        return new ProbeRequestError('dns-error', 'DNS lookup failed');
+    }
+    if (
+        code.startsWith('ERR_TLS') ||
+        code.includes('CERT') ||
+        code === 'DEPTH_ZERO_SELF_SIGNED_CERT' ||
+        code === 'UNABLE_TO_VERIFY_LEAF_SIGNATURE'
+    ) {
+        return new ProbeRequestError('tls-error', 'TLS validation failed');
+    }
+    return new ProbeRequestError('connect-error', 'Connection failed');
+};
+
 async function withDeadline<T>(operation: Promise<T>, deadline: number): Promise<T> {
     const remainingTime = deadline - Date.now();
-    if (remainingTime <= 0) throw new Error('Request timed out');
+    if (remainingTime <= 0) throw new ProbeRequestError('timeout', 'Request timed out');
 
     let timer: NodeJS.Timeout | undefined;
     try {
         return await Promise.race([
             operation,
             new Promise<never>((_, reject) => {
-                timer = setTimeout(() => reject(new Error('Request timed out')), remainingTime);
+                timer = setTimeout(
+                    () => reject(new ProbeRequestError('timeout', 'Request timed out')),
+                    remainingTime
+                );
             }),
         ]);
     } finally {
@@ -179,43 +229,59 @@ async function resolveTarget(input: string | URL, deadline: number): Promise<Res
     const literalFamily = net.isIP(hostname);
     if (literalFamily) {
         if (!isPublicIpAddress(hostname)) throw new UnsafeUrlError('Private or reserved IP addresses are not allowed');
-        return { url, address: hostname, family: literalFamily as 4 | 6 };
+        return {
+            url,
+            addresses: [{ address: hostname, family: literalFamily as 4 | 6 }],
+        };
     }
 
     let addresses: Array<{ address: string; family: number }>;
     try {
         addresses = await withDeadline(dns.lookup(hostname, { all: true, verbatim: true }), deadline);
-    } catch {
-        throw new Error('DNS lookup failed');
+    } catch (error) {
+        if (isTimeoutError(error)) throw error;
+        throw new ProbeRequestError('dns-error', 'DNS lookup failed');
     }
 
-    if (addresses.length === 0) throw new Error('DNS lookup returned no addresses');
+    if (addresses.length === 0) throw new ProbeRequestError('dns-error', 'DNS lookup returned no addresses');
     if (addresses.some(result => !isPublicIpAddress(result.address))) {
         throw new UnsafeUrlError('Hostname resolves to a private or reserved IP address');
     }
 
-    const selected = addresses[0];
-    return { url, address: selected.address, family: selected.family as 4 | 6 };
+    return {
+        url,
+        addresses: addresses
+            .map(result => ({ address: result.address, family: result.family as 4 | 6 }))
+            .sort((left, right) => left.family - right.family),
+    };
 }
 
-async function requestOnce(
-    input: string | URL,
+function requestAddress(
+    target: ResolvedTarget,
+    resolved: ResolvedAddress,
     method: 'HEAD' | 'GET',
-    redirects = 0,
-    deadline = Date.now() + REQUEST_TIMEOUT_MS
-): Promise<{ ok: boolean; statusCode: number }> {
-    if (redirects > MAX_REDIRECTS) throw new Error('Too many redirects');
-    if (Date.now() >= deadline) throw new Error('Request timed out');
+    redirects: number,
+    deadline: number
+): Promise<RequestResult> {
+    const remainingTime = deadline - Date.now();
+    if (remainingTime <= 0) return Promise.reject(new ProbeRequestError('timeout', 'Request timed out'));
 
-    const target = await resolveTarget(input, deadline);
-    if (Date.now() >= deadline) throw new Error('Request timed out');
+    const attemptTimeout = Math.min(ADDRESS_ATTEMPT_TIMEOUT_MS, remainingTime);
     const transport = target.url.protocol === 'https:' ? https : http;
 
     return new Promise((resolve, reject) => {
+        let settled = false;
+        const finish = (callback: () => void) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            callback();
+        };
+
         const request = transport.request({
             protocol: target.url.protocol,
-            hostname: target.address,
-            family: target.family,
+            hostname: resolved.address,
+            family: resolved.family,
             port: target.url.port || (target.url.protocol === 'https:' ? 443 : 80),
             method,
             path: `${target.url.pathname}${target.url.search}`,
@@ -236,47 +302,85 @@ async function requestOnce(
                 try {
                     redirectUrl = new URL(location, target.url);
                 } catch {
-                    reject(new Error('Invalid redirect URL'));
+                    finish(() => reject(new ProbeRequestError('connect-error', 'Invalid redirect URL')));
                     return;
                 }
 
-                requestOnce(redirectUrl, method, redirects + 1, deadline).then(resolve, reject);
+                finish(() => {
+                    requestOnce(redirectUrl, method, redirects + 1, deadline).then(resolve, reject);
+                });
                 return;
             }
 
-            resolve({ ok: statusCode >= 200 && statusCode < 300, statusCode });
+            finish(() => resolve({ statusCode }));
         });
 
-        const remainingTime = Math.max(1, deadline - Date.now());
-        request.setTimeout(remainingTime, () => request.destroy(new Error('Request timed out')));
-        request.on('error', reject);
+        const timer = setTimeout(() => {
+            request.destroy(new ProbeRequestError('timeout', 'Request timed out'));
+        }, attemptTimeout);
+
+        request.on('error', error => finish(() => reject(classifyNetworkError(error))));
         request.end();
     });
 }
 
+async function requestOnce(
+    input: string | URL,
+    method: 'HEAD' | 'GET',
+    redirects = 0,
+    deadline = Date.now() + REQUEST_TIMEOUT_MS
+): Promise<RequestResult> {
+    if (redirects > MAX_REDIRECTS) throw new ProbeRequestError('connect-error', 'Too many redirects');
+    if (Date.now() >= deadline) throw new ProbeRequestError('timeout', 'Request timed out');
+
+    const target = await resolveTarget(input, deadline);
+    let lastError: ProbeRequestError | undefined;
+
+    for (const resolved of target.addresses) {
+        try {
+            return await requestAddress(target, resolved, method, redirects, deadline);
+        } catch (error) {
+            lastError = classifyNetworkError(error);
+            if (Date.now() >= deadline) break;
+        }
+    }
+
+    throw lastError || new ProbeRequestError('connect-error', 'No reachable address');
+}
+
+const isReachableStatus = (statusCode: number) => statusCode >= 100 && statusCode < 500;
+
 export async function probePublicWebsite(url: string): Promise<ProbeResult> {
     const startedAt = Date.now();
     const deadline = startedAt + REQUEST_TIMEOUT_MS;
-    let result: { ok: boolean; statusCode: number } | null = null;
+    let result: RequestResult | null = null;
+    let failure: ProbeRequestError | undefined;
 
     try {
         result = await requestOnce(url, 'HEAD', 0, deadline);
     } catch (error) {
         if (error instanceof UnsafeUrlError) throw error;
+        failure = classifyNetworkError(error);
     }
 
-    if (!result?.ok) {
+    if (!result || !isReachableStatus(result.statusCode)) {
         try {
             result = await requestOnce(url, 'GET', 0, deadline);
+            failure = undefined;
         } catch (error) {
             if (error instanceof UnsafeUrlError) throw error;
+            failure = classifyNetworkError(error);
             result = null;
         }
     }
 
+    const statusCode = result?.statusCode || 0;
+    const online = isReachableStatus(statusCode);
+
     return {
-        status: result?.ok ? 'online' : 'offline',
-        statusCode: result?.statusCode || 0,
+        status: online ? 'online' : 'offline',
+        statusCode,
         latency: Date.now() - startedAt,
+        ...(!online ? { reason: failure?.reason || 'http-error' } : {}),
     };
 }

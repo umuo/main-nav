@@ -32,6 +32,9 @@ const SiteCard: React.FC<SiteCardProps> = ({ site, clientConnectivity, onRefresh
   const clientReasonText = clientConnectivity.reason
     ? t(`connectivity.reason.${clientConnectivity.reason}`)
     : '';
+  const serverReasonText = site.serverReason
+    ? t(`connectivity.serverReason.${site.serverReason}`)
+    : '';
 
   const formatTime = (timestamp: number) => {
     if (timestamp === 0) return t('status.never');
@@ -131,14 +134,24 @@ const SiteCard: React.FC<SiteCardProps> = ({ site, clientConnectivity, onRefresh
             </span>
           </div>
 
-          <div className="flex items-center justify-between gap-3 rounded-lg bg-[var(--surface-muted)] px-2.5 py-2 text-[var(--text-secondary)]">
-            <span className="flex items-center gap-1.5 font-semibold">
+          <div className="flex items-start justify-between gap-3 rounded-lg bg-[var(--surface-muted)] px-2.5 py-2 text-[var(--text-secondary)]">
+            <span className="flex flex-none items-center gap-1.5 pt-0.5 font-semibold">
               <Server size={13} aria-hidden="true" />
               {t('connectivity.server')}
             </span>
-            <span className={`font-semibold ${site.status === 'online' ? 'text-[var(--status-online-text)]' : site.status === 'offline' ? 'text-[var(--status-offline-text)]' : 'text-[var(--text-tertiary)]'}`}>
-              {t(`status.${site.status}`)}
-              {site.status === 'online' && site.latency !== undefined ? ` · ${site.latency} ms` : ''}
+            <span className="min-w-0 text-right">
+              <span
+                className={`block font-semibold ${site.status === 'online' ? 'text-[var(--status-online-text)]' : site.status === 'offline' ? 'text-[var(--status-offline-text)]' : 'text-[var(--text-tertiary)]'}`}
+              >
+                {t(`status.${site.status}`)}
+                {site.serverStatusCode ? ` · HTTP ${site.serverStatusCode}` : ''}
+                {site.status === 'online' && site.latency !== undefined ? ` · ${site.latency} ms` : ''}
+              </span>
+              {serverReasonText && (
+                <span className="mt-1 block max-w-48 text-[10px] leading-4 text-[var(--text-tertiary)]">
+                  {serverReasonText}
+                </span>
+              )}
             </span>
           </div>
         </div>

@@ -1,6 +1,18 @@
 {
+    "$schema": "https://openapi.vercel.sh/vercel.json",
     "framework": "nextjs",
     "buildCommand": "npm run build",
     "installCommand": "npm install",
-    "outputDirectory": ".next"
+    "outputDirectory": ".next",
+    "functions": {
+        "pages/api/monitor/run.ts": {
+            "maxDuration": 300
+        }
+    },
+    "crons": [
+        {
+            "path": "/api/monitor/run",
+            "schedule": "0 3 * * *"
+        }
+    ]
 }

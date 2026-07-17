@@ -5,6 +5,14 @@ export interface Category {
 
 export type ConnectivityStatus = 'online' | 'offline' | 'checking' | 'unknown';
 
+export type ServerProbeReason =
+  | 'connect-error'
+  | 'dns-error'
+  | 'http-error'
+  | 'timeout'
+  | 'tls-error'
+  | 'unsafe-url';
+
 export interface Website {
   id: string;
   title: string;
@@ -14,7 +22,18 @@ export interface Website {
   status: ConnectivityStatus;
   lastChecked: number; // Timestamp
   latency?: number; // In ms
+  serverStatusCode?: number;
+  serverReason?: ServerProbeReason;
   categoryId?: string; // Optional for backward compatibility, but we will default it
+}
+
+export interface MonitorRunSummary {
+  success: boolean;
+  checked: number;
+  online: number;
+  offline: number;
+  failed: number;
+  durationMs: number;
 }
 
 export type ClientProbeReason =

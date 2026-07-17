@@ -7,6 +7,7 @@ import {
   LogOut,
   Palette,
   Plus,
+  RefreshCw,
   Save,
   Search,
   ShieldCheck,
@@ -14,7 +15,7 @@ import {
   Upload,
   X,
 } from 'lucide-react';
-import { Website, Category, Theme } from '../types';
+import { Website, Category, Theme, MonitorRunSummary } from '../types';
 import { useTranslation } from '../contexts/LanguageContext';
 import { useTheme } from '../contexts/ThemeContext';
 
@@ -27,6 +28,7 @@ interface AdminDashboardProps {
   onAddCategory: (name: string) => Promise<void>;
   onUpdateCategory: (id: string, name: string) => Promise<void>;
   onDeleteCategory: (id: string) => Promise<void>;
+  onRunServerChecks: () => Promise<MonitorRunSummary>;
   onLogout: () => void;
 }
 
@@ -39,6 +41,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onAddCategory,
   onUpdateCategory,
   onDeleteCategory,
+  onRunServerChecks,
   onLogout
 }) => {
   const { t } = useTranslation();
@@ -60,6 +63,28 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [description, setDescription] = useState('');
   const [selectedCategoryId, setSelectedCategoryId] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
+  const [isCheckingServers, setIsCheckingServers] = useState(false);
+  const [serverCheckMessage, setServerCheckMessage] = useState('');
+  const [serverCheckFailed, setServerCheckFailed] = useState(false);
+
+  const handleRunServerChecks = async () => {
+    setIsCheckingServers(true);
+    setServerCheckMessage('');
+    setServerCheckFailed(false);
+
+    try {
+      const summary = await onRunServerChecks();
+      setServerCheckFailed(summary.failed > 0);
+      setServerCheckMessage(summary.failed > 0
+        ? t('admin.checkServersPartial', { failed: summary.failed })
+        : t('admin.checkServersDone', { online: summary.online, offline: summary.offline }));
+    } catch {
+      setServerCheckFailed(true);
+      setServerCheckMessage(t('admin.checkServersError'));
+    } finally {
+      setIsCheckingServers(false);
+    }
+  };
 
   const resetForm = () => {
     setTitle('');
@@ -311,13 +336,34 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
             className="field-control h-11 rounded-xl py-2 pl-10 pr-4 text-sm"
           />
         </div>
-        <button
-          onClick={handleOpenAdd}
-          className="primary-button flex h-11 w-full items-center justify-center gap-2 rounded-xl px-5 text-sm font-semibold sm:w-auto"
-        >
-          <Plus size={17} />
-          {t('admin.addWebsite')}
-        </button>
+        <div className="flex flex-col gap-2 sm:items-end">
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <button
+              type="button"
+              onClick={handleRunServerChecks}
+              disabled={isCheckingServers || websites.length === 0}
+              className="secondary-button flex h-11 w-full items-center justify-center gap-2 rounded-xl px-4 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
+            >
+              <RefreshCw size={16} className={isCheckingServers ? 'animate-spin' : ''} />
+              {isCheckingServers ? t('admin.checkingServers') : t('admin.checkServers')}
+            </button>
+            <button
+              onClick={handleOpenAdd}
+              className="primary-button flex h-11 w-full items-center justify-center gap-2 rounded-xl px-5 text-sm font-semibold sm:w-auto"
+            >
+              <Plus size={17} />
+              {t('admin.addWebsite')}
+            </button>
+          </div>
+          {serverCheckMessage && (
+            <p
+              role="status"
+              className={`text-xs font-medium ${serverCheckFailed ? 'text-[var(--status-offline-text)]' : 'text-[var(--status-online-text)]'}`}
+            >
+              {serverCheckMessage}
+            </p>
+          )}
+        </div>
       </div>
 
       {/* Website Table */}
@@ -356,7 +402,17 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     </span>
                   </td>
                   <td className="hidden px-5 py-4 md:table-cell">
-                    <span className={`status-badge status-${site.status}`}>{t(`status.${site.status}`)}</span>
+                    <div className="max-w-52">
+                      <span className={`status-badge status-${site.status}`}>
+                        {t(`status.${site.status}`)}
+                        {site.serverStatusCode ? ` · ${site.serverStatusCode}` : ''}
+                      </span>
+                      {site.serverReason && (
+                        <p className="mt-1.5 text-[11px] leading-4 text-[var(--text-tertiary)]">
+                          {t(`connectivity.serverReason.${site.serverReason}`)}
+                        </p>
+                      )}
+                    </div>
                   </td>
                   <td className="px-5 py-4 text-right">
                     <div className="flex items-center justify-end gap-2">

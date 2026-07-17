@@ -17,7 +17,7 @@ import {
   ShieldCheck,
   Sparkles,
 } from 'lucide-react';
-import { Website, ViewState, Category, ClientConnectivity, ClientConnectivityMap } from '../types';
+import { Website, ViewState, Category, ClientConnectivity, ClientConnectivityMap, MonitorRunSummary } from '../types';
 import { CHECK_INTERVAL_MS } from '../constants';
 import { useTranslation } from '../contexts/LanguageContext';
 import { probeWebsiteFromBrowser } from '../services/monitorService';
@@ -150,7 +150,8 @@ export default function Home() {
   };
 
   const checkServerSite = useCallback(async (id: string, currentList = websitesRef.current) => {
-    if (!currentList.some(site => site.id === id)) return;
+    const previousSite = currentList.find(site => site.id === id);
+    if (!previousSite) return;
     setWebsites(prev => {
       const next = prev.map(site => site.id === id ? { ...site, status: 'checking' as const } : site);
       websitesRef.current = next;
@@ -163,32 +164,28 @@ export default function Home() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id })
       });
-      if (!res.ok) throw new Error('Website check failed');
       const result = await res.json();
+      if (!res.ok && res.status !== 422) throw new Error('Website check failed');
       setWebsites(prev => {
         const next = prev.map(site => site.id === id ? {
           ...site,
           status: result.status,
           lastChecked: result.lastChecked,
-          latency: result.latency
+          latency: result.latency,
+          serverStatusCode: result.statusCode || undefined,
+          serverReason: result.reason
         } : site);
         websitesRef.current = next;
         return next;
       });
     } catch {
       setWebsites(prev => {
-        const next = prev.map(site =>
-          site.id === id ? { ...site, status: 'offline' as const, lastChecked: Date.now(), latency: undefined } : site
-        );
+        const next = prev.map(site => site.id === id ? previousSite : site);
         websitesRef.current = next;
         return next;
       });
     }
   }, []);
-
-  const checkAllServerSites = useCallback((currentList = websitesRef.current) => {
-    currentList.forEach(site => void checkServerSite(site.id, currentList));
-  }, [checkServerSite]);
 
   const checkClientSite = useCallback(async (
     id: string,
@@ -259,16 +256,22 @@ export default function Home() {
           void checkAllClientSites(staleOrMissingSites);
         }
 
-        data.forEach((site: Website) => {
-          if (site.status === 'unknown') {
-            void checkServerSite(site.id, data);
-          }
-        });
       }
     } catch (error) {
       console.error('Failed to fetch websites', error);
     }
-  }, [checkAllClientSites, checkServerSite]);
+  }, [checkAllClientSites]);
+
+  const runServerChecks = useCallback(async (): Promise<MonitorRunSummary> => {
+    const res = await fetch('/api/monitor/run', { method: 'POST' });
+    const result = await res.json().catch(() => null) as MonitorRunSummary | null;
+    if (!res.ok || !result) {
+      throw new Error('Server checks failed');
+    }
+
+    await fetchWebsites();
+    return result;
+  }, [fetchWebsites]);
 
   useEffect(() => {
     if (initialHydrationStartedRef.current) return;
@@ -279,12 +282,9 @@ export default function Home() {
   }, [fetchCategories, fetchWebsites]);
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      void checkAllClientSites(websitesRef.current);
-      checkAllServerSites(websitesRef.current);
-    }, CHECK_INTERVAL_MS);
+    const interval = setInterval(() => void checkAllClientSites(websitesRef.current), CHECK_INTERVAL_MS);
     return () => clearInterval(interval);
-  }, [checkAllClientSites, checkAllServerSites]);
+  }, [checkAllClientSites]);
 
   const handleCaptchaValidate = useCallback((token: string) => {
     setTurnstileToken(token);
@@ -394,6 +394,7 @@ export default function Home() {
         websitesRef.current = nextWebsites;
         setWebsites(nextWebsites);
         void checkClientSite(updatedSite.id, nextWebsites, true);
+        void checkServerSite(updatedSite.id, nextWebsites);
       }
     } catch (e) {
       console.error(e);
@@ -733,6 +734,7 @@ export default function Home() {
                 onAddCategory={addCategory}
                 onUpdateCategory={updateCategory}
                 onDeleteCategory={deleteCategory}
+                onRunServerChecks={runServerChecks}
                 onLogout={handleLogout}
               />
             </div>

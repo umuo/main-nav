@@ -1,11 +1,27 @@
-import { Website, Theme, Category } from '../types';
+import { Website, Theme, Category, ServerProbeReason } from '../types';
 import type { Website as PrismaWebsite } from '@prisma/client';
 import { prisma } from './prisma';
+
+const databaseErrorMetadata = (error: unknown) => {
+    if (!error || typeof error !== 'object') return { name: 'UnknownError' };
+    return {
+        name: 'name' in error ? String(error.name) : 'DatabaseError',
+        ...('code' in error ? { code: String(error.code) } : {}),
+    };
+};
 
 // --- Prisma Store Implementation ---
 class PrismaStore {
     private toWebsite(site: PrismaWebsite): Website {
         const validStatuses: Website['status'][] = ['online', 'offline', 'checking', 'unknown'];
+        const validServerReasons: ServerProbeReason[] = [
+            'connect-error',
+            'dns-error',
+            'http-error',
+            'timeout',
+            'tls-error',
+            'unsafe-url',
+        ];
         const status = validStatuses.includes(site.status as Website['status'])
             ? site.status as Website['status']
             : 'unknown';
@@ -19,6 +35,10 @@ class PrismaStore {
             status,
             lastChecked: Number(site.lastChecked),
             latency: site.latency ?? undefined,
+            serverStatusCode: site.serverStatusCode ?? undefined,
+            serverReason: validServerReasons.includes(site.serverReason as ServerProbeReason)
+                ? site.serverReason as ServerProbeReason
+                : undefined,
             categoryId: site.categoryId || 'default'
         };
     }
@@ -47,6 +67,8 @@ class PrismaStore {
                 status: site.status,
                 lastChecked: BigInt(site.lastChecked),
                 latency: site.latency || null,
+                serverStatusCode: site.serverStatusCode || null,
+                serverReason: site.serverReason || null,
                 categoryId: categoryId
             }
         });
@@ -69,7 +91,30 @@ class PrismaStore {
                 }
             });
             return true;
-        } catch {
+        } catch (error) {
+            console.error('Website update failed', { id, ...databaseErrorMetadata(error) });
+            return false;
+        }
+    }
+
+    async updateWebsiteMonitor(
+        id: string,
+        result: Pick<Website, 'status' | 'lastChecked' | 'latency' | 'serverStatusCode' | 'serverReason'>
+    ): Promise<boolean> {
+        try {
+            await prisma.website.update({
+                where: { id },
+                data: {
+                    status: result.status,
+                    lastChecked: BigInt(result.lastChecked),
+                    latency: result.latency ?? null,
+                    serverStatusCode: result.serverStatusCode ?? null,
+                    serverReason: result.serverReason ?? null,
+                },
+            });
+            return true;
+        } catch (error) {
+            console.error('Website monitor update failed', { id, ...databaseErrorMetadata(error) });
             return false;
         }
     }

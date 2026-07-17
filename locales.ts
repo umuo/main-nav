@@ -22,6 +22,14 @@ export const translations = {
         "network-error": "请求被网络、证书或浏览器策略阻止",
         timeout: "浏览器端请求超时",
         "unsupported-url": "仅支持 HTTP 或 HTTPS 地址"
+      },
+      serverReason: {
+        "connect-error": "服务器无法连接目标的任何公网地址",
+        "dns-error": "服务器 DNS 解析失败",
+        "http-error": "目标返回 HTTP 5xx 错误",
+        timeout: "服务器探测在 30 秒内未完成",
+        "tls-error": "目标 TLS 证书或握手失败",
+        "unsafe-url": "目标解析到私网、保留地址或不安全端口"
       }
     },
     dashboard: {
@@ -76,6 +84,11 @@ export const translations = {
       appearance: "界面主题",
       appearanceSubtitle: "选择整个导航页的视觉风格",
       serviceCount: "{count} 个服务",
+      checkServers: "服务器批量检测",
+      checkingServers: "正在检测服务器...",
+      checkServersDone: "检测完成：{online} 个在线，{offline} 个离线",
+      checkServersPartial: "检测完成，但有 {failed} 个结果保存失败",
+      checkServersError: "服务器检测失败，请检查数据库与部署日志。",
       searchPlaceholder: "搜索...",
       addWebsite: "新增网站",
       manageCategories: "管理分类",
@@ -142,6 +155,14 @@ export const translations = {
         "network-error": "The request was blocked by the network, certificate, or browser policy",
         timeout: "The browser-side request timed out",
         "unsupported-url": "Only HTTP or HTTPS addresses are supported"
+      },
+      serverReason: {
+        "connect-error": "The server could not connect to any public target address",
+        "dns-error": "Server-side DNS resolution failed",
+        "http-error": "The target returned an HTTP 5xx response",
+        timeout: "The server probe did not finish within 30 seconds",
+        "tls-error": "The target TLS certificate or handshake failed",
+        "unsafe-url": "The target resolved to a private/reserved address or unsafe port"
       }
     },
     dashboard: {
@@ -196,6 +217,11 @@ export const translations = {
       appearance: "Interface theme",
       appearanceSubtitle: "Choose the visual style for the navigation hub",
       serviceCount: "{count} services",
+      checkServers: "Check from server",
+      checkingServers: "Checking from server...",
+      checkServersDone: "Done: {online} online, {offline} offline",
+      checkServersPartial: "Done, but {failed} results could not be saved",
+      checkServersError: "Server checks failed. Review the database and deployment logs.",
       searchPlaceholder: "Search...",
       addWebsite: "Add Website",
       manageCategories: "Manage Categories",
