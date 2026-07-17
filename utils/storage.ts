@@ -187,6 +187,21 @@ class PrismaStore {
         }
     }
 
+    async clearAllData(): Promise<boolean> {
+        try {
+            // Delete all websites
+            await prisma.website.deleteMany();
+            // Delete all categories except 'default'
+            await prisma.category.deleteMany({
+                where: { id: { not: 'default' } }
+            });
+            return true;
+        } catch (error) {
+            console.error('Failed to clear data', databaseErrorMetadata(error));
+            return false;
+        }
+    }
+
     async getTheme(): Promise<Theme> {
         const config = await prisma.config.findUnique({
             where: { key: 'theme' }

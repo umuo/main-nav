@@ -179,6 +179,25 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     downloadAnchorNode.remove();
   };
 
+  const handleClearData = async () => {
+    if (confirm(t('admin.confirmClearData'))) {
+      try {
+        const res = await fetch('/api/sites/clear', {
+          method: 'POST',
+        });
+        if (res.ok) {
+          alert(t('admin.clearSuccess'));
+          window.location.reload();
+        } else {
+          alert(t('admin.clearError'));
+        }
+      } catch (err) {
+        console.error(err);
+        alert(t('admin.clearError'));
+      }
+    }
+  };
+
   const handleImportClick = () => {
     fileInputRef.current?.click();
   };
@@ -293,6 +312,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </div>
 
         <div className="flex flex-wrap gap-2 lg:justify-end">
+          <button
+            onClick={handleClearData}
+            className="secondary-button flex h-10 items-center gap-2 rounded-xl px-3.5 text-sm font-semibold !text-red-500 !border-red-500/20 hover:!bg-red-500/10"
+          >
+            <Trash2 size={16} />
+            {t('admin.clearData')}
+          </button>
           <button
             onClick={() => setIsCategoryManagerOpen(true)}
             className="secondary-button flex h-10 items-center gap-2 rounded-xl px-3.5 text-sm font-semibold"

@@ -130,7 +130,11 @@ export const translations = {
       export: "导出",
       importSuccess: "成功导入 {count} 个网站。",
       importError: "导入失败，请检查文件格式。",
-      errorAdd: "添加网站失败。"
+      errorAdd: "添加网站失败。",
+      clearData: "清空数据",
+      confirmClearData: "确定要清空所有网站和分类数据吗？此操作无法恢复！",
+      clearSuccess: "数据已清空。",
+      clearError: "清空数据失败，请重试。"
     }
   },
   en: {
@@ -264,7 +268,11 @@ export const translations = {
       export: "Export",
       importSuccess: "Successfully imported {count} websites.",
       importError: "Import failed. Please check file format.",
-      errorAdd: "Failed to add website."
+      errorAdd: "Failed to add website.",
+      clearData: "Clear Data",
+      confirmClearData: "Are you sure you want to clear all websites and categories? This action cannot be undone!",
+      clearSuccess: "Data cleared successfully.",
+      clearError: "Failed to clear data. Please try again."
     }
   }
 };
