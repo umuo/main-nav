@@ -35,3 +35,13 @@ model Config {
   key   String @id
   value String
 }
+
+model LoginThrottle {
+  key             String @id
+  failures        Int    @default(0)
+  windowStartedAt BigInt
+  blockedUntil    BigInt @default(0)
+  updatedAt       BigInt
+
+  @@index([updatedAt])
+}

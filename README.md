@@ -1,13 +1,13 @@
 # SentinelNav
 
-SentinelNav 是一个基于 Next.js 的网站导航与可用性监控系统。公开页面按分类展示网站及最近一次检测结果；管理员可以维护网站和分类、切换全局主题，并导入或导出 JSON 数据。
+SentinelNav 是一个基于 Next.js 的网站导航与双视角连通性监控系统。公开页面同时展示当前浏览器网络与服务器侧的最近一次检测结果；管理员可以维护网站和分类、切换全局主题，并导入或导出 JSON 数据。
 
 ## 技术栈
 
 - Next.js 16 Pages Router、React 19、TypeScript
 - Tailwind CSS
 - PostgreSQL、Prisma 7.8+（本地开发可自动使用 PGlite）
-- JWT HttpOnly Cookie、bcrypt、加密数学验证码
+- JWT HttpOnly Cookie、bcrypt、Cloudflare Turnstile、数据库级登录限流
 
 ## 环境要求
 
@@ -27,7 +27,7 @@ npm install
 npm run dev
 ```
 
-当没有配置 `DATABASE_URL` 时，启动器会在 `data/pglite` 自动创建持久化的本地数据库、应用 Prisma 迁移，再启动 Next.js。终端会输出本次运行可用的临时管理员账号和随机密码；停止开发服务时，本地数据库服务也会一并关闭。
+当没有配置 `DATABASE_URL` 时，启动器会在 `data/pglite` 自动创建持久化的本地数据库、应用 Prisma 迁移，再启动 Next.js。终端会输出本地管理员账号和随机密码，凭据保存在已被 Git 忽略的 `data/dev-credentials.json`，重启后不会变化；停止开发服务时，本地数据库服务也会一并关闭。
 
 ## 外部数据库与生产配置
 
@@ -45,7 +45,10 @@ cp .env.sample .env.local
 | `ADMIN_USERNAME` | 管理员账号 |
 | `ADMIN_PASSWORD_HASH` | 管理员密码的 bcrypt Hash |
 | `JWT_SECRET` | JWT 签名密钥，至少 32 个字符 |
-| `CAPTCHA_SECRET` | 验证码加密密钥，至少 32 个字符，不能与 JWT 密钥相同 |
+| `NEXT_PUBLIC_TURNSTILE_SITE_KEY` | Cloudflare Turnstile 公开站点密钥 |
+| `TURNSTILE_SECRET_KEY` | Cloudflare Turnstile 服务端密钥，不得暴露给浏览器 |
+| `TURNSTILE_ALLOWED_HOSTNAMES` | 可选，逗号分隔的 Siteverify 主机名白名单 |
+| `TRUST_PROXY_HEADERS` | 只有反向代理会清洗并重写来源 IP 请求头时才设为 `true` |
 
 生成密码 Hash：
 
@@ -53,12 +56,15 @@ cp .env.sample .env.local
 node scripts/generate-password.mjs '你的强密码'
 ```
 
-生成两个独立的随机密钥：
+生成 JWT 随机密钥：
 
 ```bash
 openssl rand -base64 48
-openssl rand -base64 48
 ```
+
+在 Cloudflare 控制台创建 Managed Turnstile Widget，将正式域名加入 Hostname Management，再把站点密钥与服务端密钥写入生产环境。官方测试密钥只由 `npm run dev` 在未配置密钥时自动使用，生产环境会拒绝测试密钥。
+
+应用默认使用 TCP 连接地址做登录限流。如果部署在 Nginx、Cloudflare 或托管平台之后，确认公网无法绕过代理直连源站，并由代理删除访客传入的 `CF-Connecting-IP`、`X-Real-IP`、`X-Forwarded-For` 后，再设置 `TRUST_PROXY_HEADERS=true`；否则攻击者可能伪造来源 IP 绕过限流。
 
 Next.js 会展开环境变量中的 `$`。把 bcrypt Hash 写入 `.env.local` 时，请使用密码脚本输出的已转义版本。
 
@@ -113,8 +119,11 @@ npm run db:studio   # 打开 Prisma Studio
 ## 运行方式
 
 - 页面从 `/api/sites` 和 `/api/categories` 读取公开导航数据。
-- 浏览器按需调用 `/api/monitor/check`，只提交站点 ID。服务端从数据库取出 URL，拒绝本机、私网、保留地址、非标准端口和不安全重定向，然后执行检测。
-- 检测状态、检测时间和延迟会写回 PostgreSQL。
+- 首页会从当前浏览器直接向目标发送 `no-cors` 请求，用于判断用户所在网络是否可达；结果只保存在该浏览器的 `localStorage`，不会写入数据库。
+- 跨域浏览器探测无法读取真实 HTTP 状态码，因此“可访问”表示请求可达，不等同于 HTTP 2xx；探测目标也会看到用户的出口 IP。
+- 对私网 IP、`.local` 和 localhost，页面会遵循浏览器的 Local Network Access 权限：后台刷新不会主动弹框，用户点击检测时才会请求授权。生产环境必须使用 HTTPS；未获授权、非安全上下文或不支持该能力的浏览器可能无法探测 HTTP 内网地址。
+- 服务器侧探测通过 `/api/monitor/check` 执行：浏览器只提交站点 ID，服务端从数据库取出 URL，拒绝本机、私网、保留地址、非标准端口和不安全重定向。
+- 服务器侧状态、检测时间和延迟会写回 PostgreSQL，并在首页作为参考状态展示。
 - 管理写接口要求有效的 JWT HttpOnly Cookie。
 - 语言偏好保存在浏览器；主题配置保存在数据库并对所有访客生效。
 
@@ -123,8 +132,6 @@ npm run db:studio   # 打开 Prisma Studio
 - `POST /api/auth/login`：管理员登录
 - `POST /api/auth/logout`：退出登录
 - `GET /api/auth/me`：读取当前登录状态
-- `GET /api/captcha/generate`：生成验证码
-- `POST /api/captcha/verify`：验证验证码
 - `GET|POST /api/sites`：读取或新增网站
 - `PUT|DELETE /api/sites/:id`：编辑或删除网站
 - `POST /api/sites/import`：导入网站
@@ -136,8 +143,10 @@ npm run db:studio   # 打开 Prisma Studio
 
 ## 安全边界
 
-- 只监控公网 HTTP/HTTPS 地址，并固定使用 80/443 端口。
+- 服务器侧只监控公网 HTTP/HTTPS 地址，并固定使用 80/443 端口；浏览器侧探测遵循访客自身网络与浏览器安全策略。
 - DNS 解析结果和每次重定向都会重新校验；连接固定到已校验的 IP，避免 DNS 重绑定。
-- 密码 Hash、JWT 密钥和验证码密钥仅从服务端环境变量读取。
-- 验证码答案通过 AES-256-GCM 加密，不会明文下发给浏览器，令牌五分钟后失效。
+- 密码 Hash、JWT 密钥和 Turnstile 服务端密钥仅从服务端环境变量读取。
+- 登录接口始终通过 Cloudflare Siteverify 验证 Turnstile 令牌，并校验 action；正式环境还可通过 `TURNSTILE_ALLOWED_HOSTNAMES` 校验主机名。
+- Turnstile 令牌只能使用一次且五分钟后过期；失败登录会重置挑战。
+- 登录失败按哈希后的客户端 IP 写入 PostgreSQL：15 分钟内失败 5 次后暂停 15 分钟，数据库中不保存原始 IP。
 - 生产环境请使用 HTTPS，并将数据库与密钥交给部署平台的 Secret 管理能力。

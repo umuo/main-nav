@@ -3,7 +3,7 @@ import http from 'node:http';
 import https from 'node:https';
 import net from 'node:net';
 
-const REQUEST_TIMEOUT_MS = 5_000;
+const REQUEST_TIMEOUT_MS = 30_000;
 const MAX_REDIRECTS = 5;
 
 export class UnsafeUrlError extends Error {
@@ -256,17 +256,18 @@ async function requestOnce(
 
 export async function probePublicWebsite(url: string): Promise<ProbeResult> {
     const startedAt = Date.now();
+    const deadline = startedAt + REQUEST_TIMEOUT_MS;
     let result: { ok: boolean; statusCode: number } | null = null;
 
     try {
-        result = await requestOnce(url, 'HEAD');
+        result = await requestOnce(url, 'HEAD', 0, deadline);
     } catch (error) {
         if (error instanceof UnsafeUrlError) throw error;
     }
 
     if (!result?.ok) {
         try {
-            result = await requestOnce(url, 'GET');
+            result = await requestOnce(url, 'GET', 0, deadline);
         } catch (error) {
             if (error instanceof UnsafeUrlError) throw error;
             result = null;

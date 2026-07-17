@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
-import { ArrowUpRight, Clock3, Globe2, RefreshCw, Zap } from 'lucide-react';
-import { Website } from '../types';
+import { ArrowUpRight, Clock3, Globe2, Laptop2, RefreshCw, Server, Zap } from 'lucide-react';
+import { ClientConnectivity, Website } from '../types';
 import { getFaviconUrl } from '../services/monitorService';
 import { useTranslation } from '../contexts/LanguageContext';
 
 interface SiteCardProps {
   site: Website;
+  clientConnectivity: ClientConnectivity;
   onRefreshOne: (id: string) => void;
 }
 
@@ -17,12 +18,20 @@ const getHostname = (url: string) => {
   }
 };
 
-const SiteCard: React.FC<SiteCardProps> = ({ site, onRefreshOne }) => {
+const SiteCard: React.FC<SiteCardProps> = ({ site, clientConnectivity, onRefreshOne }) => {
   const { t } = useTranslation();
   const iconUrl = site.iconUrl || getFaviconUrl(site.url);
   const [failedIconUrl, setFailedIconUrl] = useState('');
   const hostname = getHostname(site.url);
   const showIcon = failedIconUrl !== iconUrl;
+  const clientStatusText = clientConnectivity.reason === 'local-network-permission-required'
+    ? t('connectivity.permissionRequired')
+    : ['insecure-context', 'local-network-denied', 'mixed-content'].includes(clientConnectivity.reason || '')
+      ? t('connectivity.browserLimited')
+      : t(`status.${clientConnectivity.status}`);
+  const clientReasonText = clientConnectivity.reason
+    ? t(`connectivity.reason.${clientConnectivity.reason}`)
+    : '';
 
   const formatTime = (timestamp: number) => {
     if (timestamp === 0) return t('status.never');
@@ -44,10 +53,10 @@ const SiteCard: React.FC<SiteCardProps> = ({ site, onRefreshOne }) => {
     <article
       role="link"
       tabIndex={0}
-      aria-label={`${site.title} · ${t(`status.${site.status}`)}`}
+      aria-label={`${site.title} · ${t('connectivity.client')} ${clientStatusText}`}
       onClick={handleCardClick}
       onKeyDown={handleCardKeyDown}
-      className={`site-card site-card-${site.status} group flex h-full cursor-pointer flex-col rounded-[1.35rem] p-5`}
+      className={`site-card site-card-${clientConnectivity.status} group flex h-full cursor-pointer flex-col rounded-[1.35rem] p-5`}
     >
       <div className="relative z-10 flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
@@ -66,8 +75,11 @@ const SiteCard: React.FC<SiteCardProps> = ({ site, onRefreshOne }) => {
             )}
           </div>
           <div className="min-w-0">
-            <span className={`status-badge status-${site.status}`}>
-              {t(`status.${site.status}`)}
+            <span
+              className={`status-badge status-${clientConnectivity.status}`}
+              title={clientReasonText || undefined}
+            >
+              {t('connectivity.client')} · {clientStatusText}
             </span>
           </div>
         </div>
@@ -82,7 +94,7 @@ const SiteCard: React.FC<SiteCardProps> = ({ site, onRefreshOne }) => {
           title={t('dashboard.checkNow')}
           aria-label={`${t('dashboard.checkNow')} · ${site.title}`}
         >
-          <RefreshCw size={15} className={site.status === 'checking' ? 'animate-spin' : ''} />
+          <RefreshCw size={15} className={clientConnectivity.status === 'checking' ? 'animate-spin' : ''} />
         </button>
       </div>
 
@@ -101,17 +113,34 @@ const SiteCard: React.FC<SiteCardProps> = ({ site, onRefreshOne }) => {
           <span className="min-w-0 flex-1 truncate">{hostname}</span>
           <ArrowUpRight size={14} aria-hidden="true" className="transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
         </div>
-        <div className="flex items-center justify-between border-t border-[var(--glass-border)] pt-3 text-xs text-[var(--text-secondary)]">
-          <span className="flex items-center gap-1.5">
-            <Clock3 size={13} aria-hidden="true" />
-            {formatTime(site.lastChecked)}
-          </span>
-          {site.status === 'online' && site.latency !== undefined && (
-            <span className="flex items-center gap-1 font-semibold text-[var(--status-online-text)]">
-              <Zap size={12} aria-hidden="true" />
-              {site.latency} ms
+        <div className="space-y-2 border-t border-[var(--glass-border)] pt-3 text-xs">
+          <div className="flex items-center justify-between gap-3 text-[var(--text-secondary)]">
+            <span className="flex min-w-0 items-center gap-1.5 font-semibold">
+              <Laptop2 size={13} aria-hidden="true" className="text-[var(--accent-color)]" />
+              {t('connectivity.client')}
             </span>
-          )}
+            <span className="flex items-center gap-1.5">
+              <Clock3 size={12} aria-hidden="true" />
+              {formatTime(clientConnectivity.lastChecked)}
+              {clientConnectivity.status === 'online' && clientConnectivity.latency !== undefined && (
+                <span className="flex items-center gap-1 font-semibold text-[var(--status-online-text)]">
+                  <Zap size={11} aria-hidden="true" />
+                  {clientConnectivity.latency} ms
+                </span>
+              )}
+            </span>
+          </div>
+
+          <div className="flex items-center justify-between gap-3 rounded-lg bg-[var(--surface-muted)] px-2.5 py-2 text-[var(--text-secondary)]">
+            <span className="flex items-center gap-1.5 font-semibold">
+              <Server size={13} aria-hidden="true" />
+              {t('connectivity.server')}
+            </span>
+            <span className={`font-semibold ${site.status === 'online' ? 'text-[var(--status-online-text)]' : site.status === 'offline' ? 'text-[var(--status-offline-text)]' : 'text-[var(--text-tertiary)]'}`}>
+              {t(`status.${site.status}`)}
+              {site.status === 'online' && site.latency !== undefined ? ` · ${site.latency} ms` : ''}
+            </span>
+          </div>
         </div>
       </div>
     </article>

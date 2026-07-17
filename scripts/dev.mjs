@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createConnection } from 'node:net';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -8,6 +8,8 @@ import { createRequire } from 'node:module';
 import dotenv from 'dotenv';
 
 const projectRoot = dirname(dirname(fileURLToPath(import.meta.url)));
+const localDataDirectory = join(projectRoot, 'data');
+const localCredentialsPath = join(localDataDirectory, 'dev-credentials.json');
 const require = createRequire(import.meta.url);
 const { hashSync } = require('bcryptjs');
 
@@ -16,6 +18,8 @@ dotenv.config({ path: join(projectRoot, '.env.local'), quiet: true });
 const localDatabaseHost = '127.0.0.1';
 const localDatabasePort = 55432;
 const localDatabaseUrl = `postgresql://postgres:postgres@${localDatabaseHost}:${localDatabasePort}/postgres?sslmode=disable`;
+const turnstileTestSiteKey = '1x00000000000000000000AA';
+const turnstileTestSecretKey = '1x0000000000000000000000000000000AA';
 const configuredDatabaseUrl = process.env.DATABASE_URL?.trim();
 const useEmbeddedDatabase = !configuredDatabaseUrl;
 
@@ -24,23 +28,52 @@ const environment = {
   DATABASE_URL: configuredDatabaseUrl || localDatabaseUrl,
 };
 
+function createLocalCredentials() {
+  const credentials = {
+    password: randomBytes(12).toString('base64url'),
+    jwtSecret: randomBytes(32).toString('base64url'),
+  };
+  mkdirSync(localDataDirectory, { recursive: true });
+  writeFileSync(localCredentialsPath, `${JSON.stringify(credentials, null, 2)}\n`, { mode: 0o600 });
+  return credentials;
+}
+
+function loadLocalCredentials() {
+  if (existsSync(localCredentialsPath)) {
+    try {
+      const credentials = JSON.parse(readFileSync(localCredentialsPath, 'utf8'));
+      if (
+        typeof credentials.password === 'string' && credentials.password.length >= 12 &&
+        typeof credentials.jwtSecret === 'string' && credentials.jwtSecret.length >= 32
+      ) {
+        return credentials;
+      }
+    } catch {
+      console.warn('The local development credentials file was invalid and will be regenerated.');
+    }
+  }
+  return createLocalCredentials();
+}
+
+const needsLocalCredentials = !environment.ADMIN_PASSWORD_HASH || !environment.JWT_SECRET;
+const localCredentials = needsLocalCredentials ? loadLocalCredentials() : undefined;
+
 if (!environment.ADMIN_USERNAME) {
   environment.ADMIN_USERNAME = 'admin';
 }
 
-let generatedPassword;
+let localAdminPassword;
 if (!environment.ADMIN_PASSWORD_HASH) {
-  generatedPassword = randomBytes(9).toString('base64url');
-  environment.ADMIN_PASSWORD_HASH = hashSync(generatedPassword, 12);
+  localAdminPassword = localCredentials.password;
+  environment.ADMIN_PASSWORD_HASH = hashSync(localAdminPassword, 12);
 }
 
 if (!environment.JWT_SECRET) {
-  environment.JWT_SECRET = randomBytes(32).toString('base64url');
+  environment.JWT_SECRET = localCredentials.jwtSecret;
 }
 
-if (!environment.CAPTCHA_SECRET) {
-  environment.CAPTCHA_SECRET = randomBytes(32).toString('base64url');
-}
+environment.NEXT_PUBLIC_TURNSTILE_SITE_KEY ||= turnstileTestSiteKey;
+environment.TURNSTILE_SECRET_KEY ||= turnstileTestSecretKey;
 
 const prismaCli = join(projectRoot, 'node_modules', 'prisma', 'build', 'index.js');
 const nextCli = join(projectRoot, 'node_modules', 'next', 'dist', 'bin', 'next');
@@ -135,10 +168,11 @@ async function main() {
   console.log('Applying database migrations.');
   await runToCompletion(process.execPath, [prismaCli, 'migrate', 'deploy']);
 
-  if (generatedPassword) {
-    console.log(`Local admin for this run: ${environment.ADMIN_USERNAME} / ${generatedPassword}`);
-    console.log('Set ADMIN_PASSWORD_HASH in .env.local when you want a persistent password.');
+  if (localAdminPassword) {
+    console.log(`Local admin: ${environment.ADMIN_USERNAME} / ${localAdminPassword}`);
+    console.log('Development credentials persist in data/dev-credentials.json (ignored by Git).');
   }
+  console.log('Using Cloudflare Turnstile test credentials for local development when no keys are configured.');
 
   nextProcess = run(process.execPath, [nextCli, 'dev', ...process.argv.slice(2)]);
   nextProcess.once('error', error => {

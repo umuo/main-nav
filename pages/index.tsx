@@ -7,6 +7,7 @@ import {
   CheckCircle2,
   Globe2,
   Languages,
+  Laptop2,
   LayoutDashboard,
   LockKeyhole,
   LogIn,
@@ -16,13 +17,41 @@ import {
   ShieldCheck,
   Sparkles,
 } from 'lucide-react';
-import { Website, ViewState, Category } from '../types';
+import { Website, ViewState, Category, ClientConnectivity, ClientConnectivityMap } from '../types';
 import { CHECK_INTERVAL_MS } from '../constants';
 import { useTranslation } from '../contexts/LanguageContext';
+import { probeWebsiteFromBrowser } from '../services/monitorService';
 
 import SiteCard from '../components/SiteCard';
 import AdminDashboard from '../components/AdminDashboard';
 import Captcha from '../components/Captcha';
+
+const CLIENT_CONNECTIVITY_STORAGE_KEY = 'sentinel_nav_client_connectivity_v1';
+const CLIENT_PROBE_CONCURRENCY = 4;
+
+const emptyClientConnectivity = (): ClientConnectivity => ({
+  status: 'unknown',
+  lastChecked: 0,
+});
+
+const loadCachedClientConnectivity = (sites: Website[]): ClientConnectivityMap => {
+  if (typeof window === 'undefined') return {};
+
+  try {
+    const parsed = JSON.parse(localStorage.getItem(CLIENT_CONNECTIVITY_STORAGE_KEY) || '{}') as ClientConnectivityMap;
+    const allowedStatuses = new Set(['online', 'offline', 'checking', 'unknown']);
+
+    return Object.fromEntries(
+      sites.flatMap(site => {
+        const value = parsed[site.id];
+        if (!value || !allowedStatuses.has(value.status) || typeof value.lastChecked !== 'number') return [];
+        return [[site.id, value]];
+      })
+    );
+  } catch {
+    return {};
+  }
+};
 
 export default function Home() {
   const { t, language, setLanguage } = useTranslation();
@@ -33,18 +62,26 @@ export default function Home() {
   const [searchTerm, setSearchTerm] = useState('');
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
   const websitesRef = useRef<Website[]>([]);
+  const [clientConnectivity, setClientConnectivity] = useState<ClientConnectivityMap>({});
+  const clientConnectivityLoadedRef = useRef(false);
+  const clientProbeSequenceRef = useRef<Record<string, number>>({});
+  const initialHydrationStartedRef = useRef(false);
 
   const [loginUsername, setLoginUsername] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
-  const [isCaptchaValid, setIsCaptchaValid] = useState(false);
-  const [captchaToken, setCaptchaToken] = useState('');
-  const [captchaAnswer, setCaptchaAnswer] = useState('');
+  const [turnstileToken, setTurnstileToken] = useState('');
+  const [captchaRefreshKey, setCaptchaRefreshKey] = useState(0);
   const [loginError, setLoginError] = useState('');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
   useEffect(() => {
     websitesRef.current = websites;
   }, [websites]);
+
+  useEffect(() => {
+    if (!clientConnectivityLoadedRef.current) return;
+    localStorage.setItem(CLIENT_CONNECTIVITY_STORAGE_KEY, JSON.stringify(clientConnectivity));
+  }, [clientConnectivity]);
 
   const checkSession = useCallback(async () => {
     try {
@@ -112,7 +149,7 @@ export default function Home() {
     }
   };
 
-  const checkSingleSite = useCallback(async (id: string, currentList = websitesRef.current) => {
+  const checkServerSite = useCallback(async (id: string, currentList = websitesRef.current) => {
     if (!currentList.some(site => site.id === id)) return;
     setWebsites(prev => {
       const next = prev.map(site => site.id === id ? { ...site, status: 'checking' as const } : site);
@@ -149,9 +186,45 @@ export default function Home() {
     }
   }, []);
 
-  const checkAllSites = useCallback((currentList = websitesRef.current) => {
-    currentList.forEach(site => void checkSingleSite(site.id, currentList));
-  }, [checkSingleSite]);
+  const checkAllServerSites = useCallback((currentList = websitesRef.current) => {
+    currentList.forEach(site => void checkServerSite(site.id, currentList));
+  }, [checkServerSite]);
+
+  const checkClientSite = useCallback(async (
+    id: string,
+    currentList = websitesRef.current,
+    allowPermissionPrompt = false
+  ) => {
+    const site = currentList.find(candidate => candidate.id === id);
+    if (!site) return;
+
+    const sequence = (clientProbeSequenceRef.current[id] || 0) + 1;
+    clientProbeSequenceRef.current[id] = sequence;
+
+    setClientConnectivity(prev => {
+      const previous = prev[id] || emptyClientConnectivity();
+      const next = { ...prev, [id]: { ...previous, status: 'checking' as const } };
+      return next;
+    });
+
+    const result = await probeWebsiteFromBrowser(site.url, { allowPermissionPrompt });
+    if (clientProbeSequenceRef.current[id] !== sequence) return;
+
+    setClientConnectivity(prev => {
+      const next = { ...prev, [id]: result };
+      return next;
+    });
+  }, []);
+
+  const checkAllClientSites = useCallback(async (
+    currentList = websitesRef.current,
+    allowPermissionPrompt = false
+  ) => {
+    for (let index = 0; index < currentList.length; index += CLIENT_PROBE_CONCURRENCY) {
+      const batch = currentList.slice(index, index + CLIENT_PROBE_CONCURRENCY);
+      await Promise.all(batch.map(site => checkClientSite(site.id, currentList, allowPermissionPrompt)));
+    }
+  }, [checkClientSite]);
 
   const fetchCategories = useCallback(async () => {
     try {
@@ -172,38 +245,54 @@ export default function Home() {
         const data = await res.json();
         websitesRef.current = data;
         setWebsites(data);
+
+        const cachedConnectivity = loadCachedClientConnectivity(data);
+        clientConnectivityLoadedRef.current = true;
+        setClientConnectivity(cachedConnectivity);
+
+        const now = Date.now();
+        const staleOrMissingSites = data.filter((site: Website) => {
+          const cached = cachedConnectivity[site.id];
+          return !cached || cached.status === 'checking' || now - cached.lastChecked >= CHECK_INTERVAL_MS;
+        });
+        if (staleOrMissingSites.length > 0) {
+          void checkAllClientSites(staleOrMissingSites);
+        }
+
         data.forEach((site: Website) => {
           if (site.status === 'unknown') {
-            void checkSingleSite(site.id, data);
+            void checkServerSite(site.id, data);
           }
         });
       }
     } catch (error) {
       console.error('Failed to fetch websites', error);
     }
-  }, [checkSingleSite]);
+  }, [checkAllClientSites, checkServerSite]);
 
   useEffect(() => {
+    if (initialHydrationStartedRef.current) return;
+    initialHydrationStartedRef.current = true;
     // Initial API hydration intentionally populates the client-side dashboard state.
     void fetchWebsites();
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     void fetchCategories();
   }, [fetchCategories, fetchWebsites]);
 
   useEffect(() => {
-    const interval = setInterval(() => checkAllSites(websitesRef.current), CHECK_INTERVAL_MS);
+    const interval = setInterval(() => {
+      void checkAllClientSites(websitesRef.current);
+      checkAllServerSites(websitesRef.current);
+    }, CHECK_INTERVAL_MS);
     return () => clearInterval(interval);
-  }, [checkAllSites]);
+  }, [checkAllClientSites, checkAllServerSites]);
 
-  const handleCaptchaValidate = useCallback((isValid: boolean, token: string, answer: string) => {
-    setIsCaptchaValid(isValid);
-    setCaptchaToken(token);
-    setCaptchaAnswer(answer);
+  const handleCaptchaValidate = useCallback((token: string) => {
+    setTurnstileToken(token);
   }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!isCaptchaValid) {
+    if (!turnstileToken) {
       setLoginError(t('login.errorCaptcha'));
       return;
     }
@@ -216,8 +305,7 @@ export default function Home() {
         body: JSON.stringify({
           username: loginUsername,
           password: loginPassword,
-          captchaToken,
-          captchaAnswer
+          turnstileToken,
         })
       });
 
@@ -228,10 +316,25 @@ export default function Home() {
         setLoginPassword('');
         setView('admin');
       } else {
-        setLoginError(t('login.errorAuth'));
+        const errorBody = await res.json().catch(() => null) as { error?: string; retryAfter?: number } | null;
+        if (res.status === 400 && errorBody?.error === 'Invalid human verification') {
+          setLoginError(t('login.errorCaptcha'));
+        } else if (res.status === 429) {
+          setLoginError(t('login.errorRateLimit', { seconds: errorBody?.retryAfter || 60 }));
+        } else if (res.status === 503 && errorBody?.error === 'Human verification unavailable') {
+          setLoginError(t('login.errorCaptchaService'));
+        } else if (res.status === 500 && errorBody?.error === 'Authentication is not configured') {
+          setLoginError(t('login.errorConfig'));
+        } else {
+          setLoginError(t('login.errorAuth'));
+        }
+        setTurnstileToken('');
+        setCaptchaRefreshKey(key => key + 1);
       }
     } catch {
-      setLoginError("An unexpected error occurred.");
+      setLoginError(t('login.errorNetwork'));
+      setTurnstileToken('');
+      setCaptchaRefreshKey(key => key + 1);
     } finally {
       setIsLoggingIn(false);
     }
@@ -260,9 +363,12 @@ export default function Home() {
       });
 
       if (res.ok) {
-        const newSite = await res.json();
-        setWebsites([...websites, newSite]);
-        checkSingleSite(newSite.id, [...websites, newSite]);
+        const newSite = await res.json() as Website;
+        const nextWebsites = [...websitesRef.current, newSite];
+        websitesRef.current = nextWebsites;
+        setWebsites(nextWebsites);
+        void checkClientSite(newSite.id, nextWebsites, true);
+        void checkServerSite(newSite.id, nextWebsites);
       }
     } catch {
       alert(t('admin.errorAdd'));
@@ -284,7 +390,10 @@ export default function Home() {
       });
 
       if (res.ok) {
-        setWebsites(websites.map(w => w.id === updatedSite.id ? updatedSite : w));
+        const nextWebsites = websitesRef.current.map(w => w.id === updatedSite.id ? updatedSite : w);
+        websitesRef.current = nextWebsites;
+        setWebsites(nextWebsites);
+        void checkClientSite(updatedSite.id, nextWebsites, true);
       }
     } catch (e) {
       console.error(e);
@@ -296,7 +405,15 @@ export default function Home() {
       try {
         const res = await fetch(`/api/sites/${id}`, { method: 'DELETE' });
         if (res.ok) {
-          setWebsites(websites.filter(w => w.id !== id));
+          const nextWebsites = websitesRef.current.filter(w => w.id !== id);
+          websitesRef.current = nextWebsites;
+          setWebsites(nextWebsites);
+          setClientConnectivity(prev => {
+            const next = { ...prev };
+            delete next[id];
+            return next;
+          });
+          delete clientProbeSequenceRef.current[id];
         }
       } catch {
         alert('Failed to delete');
@@ -308,9 +425,12 @@ export default function Home() {
     setLanguage(language === 'en' ? 'zh' : 'en');
   };
 
-  const onlineCount = websites.filter(w => w.status === 'online').length;
-  const offlineCount = websites.filter(w => w.status === 'offline').length;
-  const attentionCount = websites.filter(w => w.status === 'offline' || w.status === 'unknown').length;
+  const getClientConnectivity = (site: Website) => clientConnectivity[site.id] || emptyClientConnectivity();
+  const onlineCount = websites.filter(site => getClientConnectivity(site).status === 'online').length;
+  const attentionCount = websites.filter(site => {
+    const status = getClientConnectivity(site).status;
+    return status === 'offline' || status === 'unknown';
+  }).length;
   const availability = websites.length === 0 ? 100 : Math.round((onlineCount / websites.length) * 100);
   const normalizedSearch = searchTerm.trim().toLowerCase();
   const filteredWebsites = websites.filter(site => {
@@ -321,7 +441,7 @@ export default function Home() {
       site.description?.toLowerCase().includes(normalizedSearch);
     return inCategory && matchesSearch;
   });
-  const isRefreshing = websites.some(site => site.status === 'checking');
+  const isRefreshing = websites.some(site => getClientConnectivity(site).status === 'checking');
 
   return (
     <div className="app-shell flex min-h-screen flex-col">
@@ -347,10 +467,12 @@ export default function Home() {
 
           <nav className="flex items-center gap-1.5 sm:gap-2">
             {view === 'dashboard' && (
-              <span className={`status-badge mr-1 hidden sm:inline-flex ${offlineCount > 0 ? 'status-offline' : 'status-online'}`}>
-                {offlineCount > 0
-                  ? `${offlineCount} ${t('dashboard.offline')}`
-                  : t('dashboard.operationalSummary')}
+              <span className="mr-1 hidden sm:block">
+                <span className={`status-badge ${attentionCount > 0 ? 'status-offline' : 'status-online'}`}>
+                  {attentionCount > 0
+                    ? t('dashboard.attentionSummary', { count: attentionCount })
+                    : t('dashboard.operationalSummary')}
+                </span>
               </span>
             )}
 
@@ -411,13 +533,18 @@ export default function Home() {
                   </div>
 
                   <button
-                    onClick={() => checkAllSites()}
+                    onClick={() => void checkAllClientSites(websitesRef.current, true)}
                     disabled={isRefreshing || websites.length === 0}
                     className="primary-button flex w-full items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
                   >
                     <RefreshCcw size={16} className={isRefreshing ? 'animate-spin' : ''} />
                     {t('dashboard.refreshAll')}
                   </button>
+                </div>
+
+                <div className="relative z-10 mt-5 flex max-w-3xl items-start gap-2.5 rounded-xl border border-[var(--glass-border)] bg-[var(--surface-muted)]/70 px-3.5 py-3 text-xs leading-5 text-[var(--text-secondary)]">
+                  <Laptop2 size={15} className="mt-0.5 flex-none text-[var(--accent-color)]" aria-hidden="true" />
+                  <span>{t('dashboard.clientProbeNotice')}</span>
                 </div>
 
                 <div className="relative z-10 mt-7 grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -481,7 +608,8 @@ export default function Home() {
                   <SiteCard
                     key={site.id}
                     site={site}
-                    onRefreshOne={(id) => checkSingleSite(id)}
+                    clientConnectivity={getClientConnectivity(site)}
+                    onRefreshOne={(id) => void checkClientSite(id, websitesRef.current, true)}
                   />
                 ))}
                 {filteredWebsites.length === 0 && (
@@ -570,12 +698,12 @@ export default function Home() {
 
                     <div className="pt-1">
                       <label className="mb-2 block text-sm font-semibold text-[var(--text-secondary)]">{t('login.securityCheck')}</label>
-                      <Captcha onValidate={handleCaptchaValidate} />
+                      <Captcha key={captchaRefreshKey} onValidate={handleCaptchaValidate} />
                     </div>
 
                     <button
                       type="submit"
-                      disabled={isLoggingIn}
+                      disabled={isLoggingIn || !turnstileToken}
                       className="primary-button mt-2 flex w-full items-center justify-center gap-2 rounded-xl py-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       {isLoggingIn && <RefreshCcw size={15} className="animate-spin" />}
