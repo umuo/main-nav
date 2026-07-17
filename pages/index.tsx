@@ -323,6 +323,8 @@ export default function Home() {
           setLoginError(t('login.errorRateLimit', { seconds: errorBody?.retryAfter || 60 }));
         } else if (res.status === 503 && errorBody?.error === 'Human verification unavailable') {
           setLoginError(t('login.errorCaptchaService'));
+        } else if (res.status === 503) {
+          setLoginError(t('login.errorService'));
         } else if (res.status === 500 && errorBody?.error === 'Authentication is not configured') {
           setLoginError(t('login.errorConfig'));
         } else {

@@ -75,6 +75,7 @@ export const translations = {
       errorRateLimit: "尝试次数过多，请在 {seconds} 秒后重试。",
       errorNetwork: "网络请求失败，请检查连接后重试。",
       errorAuth: "用户名或密码错误。",
+      errorService: "登录服务暂时不可用，请稍后重试。",
       errorConfig: "管理员登录尚未配置。",
       refreshCaptcha: "点击刷新图片"
     },
@@ -208,6 +209,7 @@ export const translations = {
       errorRateLimit: "Too many attempts. Try again in {seconds} seconds.",
       errorNetwork: "The network request failed. Check your connection and try again.",
       errorAuth: "Invalid username or password.",
+      errorService: "The login service is temporarily unavailable. Please try again later.",
       errorConfig: "Administrator login is not configured.",
       refreshCaptcha: "Click to refresh image"
     },
