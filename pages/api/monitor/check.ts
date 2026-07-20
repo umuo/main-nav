@@ -1,7 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { checkAndPersistWebsite, MonitorPersistenceError } from '../../../services/serverMonitorService';
 import { ConfigurationError } from '../../../utils/env';
-import { hasAdminSession } from '../../../utils/monitorAuthorization';
+import { hasAdminAccess } from '../../../utils/monitorAuthorization';
 import { storage } from '../../../utils/storage';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -11,7 +11,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   try {
-    if (!hasAdminSession(req)) {
+    if (!hasAdminAccess(req)) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 

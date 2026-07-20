@@ -1,6 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { storage } from '../../../utils/storage';
-import { verifyJwt } from '../../../utils/auth';
+import { hasAdminAccess } from '../../../utils/monitorAuthorization';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
     if (req.method === 'OPTIONS') {
@@ -13,8 +13,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (!siteId) return res.status(400).json({ error: 'Missing ID' });
 
     if (req.method === 'DELETE') {
-        const { auth_token } = req.cookies;
-        if (!auth_token || !verifyJwt(auth_token)) {
+        if (!hasAdminAccess(req)) {
             return res.status(401).json({ error: 'Unauthorized' });
         }
 
@@ -29,8 +28,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     if (req.method === 'PUT') {
-        const { auth_token } = req.cookies;
-        if (!auth_token || !verifyJwt(auth_token)) {
+        if (!hasAdminAccess(req)) {
             return res.status(401).json({ error: 'Unauthorized' });
         }
 

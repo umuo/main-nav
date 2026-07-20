@@ -1,0 +1,4 @@
+interface:
+  display_name: "导航页管理"
+  short_description: "通过部署网址和管理 Token 安全维护导航页"
+  default_prompt: "Use $manage-main-nav to manage a deployed navigation instance using its base URL and runtime credentials."

@@ -5,7 +5,7 @@ import {
   MonitorPersistenceError,
 } from '../../../services/serverMonitorService';
 import { ConfigurationError } from '../../../utils/env';
-import { hasAdminSession, hasValidCronSecret } from '../../../utils/monitorAuthorization';
+import { hasAdminAccess, hasValidCronSecret } from '../../../utils/monitorAuthorization';
 import { storage } from '../../../utils/storage';
 import { Website } from '../../../types';
 
@@ -70,7 +70,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const cronAuthorized = hasValidCronSecret(req);
     const authorized = req.method === 'GET'
       ? cronAuthorized
-      : cronAuthorized || hasAdminSession(req);
+      : cronAuthorized || hasAdminAccess(req);
     if (!authorized) {
       return res.status(401).json({ error: 'Unauthorized' });
     }

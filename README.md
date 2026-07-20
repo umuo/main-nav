@@ -47,6 +47,7 @@ cp .env.sample .env.local
 | `ADMIN_USERNAME` | 管理员账号 |
 | `ADMIN_PASSWORD_HASH` | 管理员密码的 bcrypt Hash |
 | `JWT_SECRET` | JWT 签名密钥，至少 32 个字符 |
+| `ADMIN_API_TOKEN` | 可选，Agent/CLI 管理 API 使用的随机 Bearer Token，至少 32 个字符 |
 | `NEXT_PUBLIC_TURNSTILE_SITE_KEY` | Cloudflare Turnstile 公开站点密钥 |
 | `TURNSTILE_SECRET_KEY` | Cloudflare Turnstile 服务端密钥，不得暴露给浏览器 |
 | `TURNSTILE_ALLOWED_HOSTNAMES` | 可选，逗号分隔的 Siteverify 主机名白名单 |
@@ -64,6 +65,14 @@ node scripts/generate-password.mjs '你的强密码'
 ```bash
 openssl rand -base64 48
 ```
+
+如需让 Agent 或 CLI 绕开交互式登录、直接调用管理 API，生成独立 Token 并仅保存到服务端 Secret：
+
+```bash
+openssl rand -hex 32
+```
+
+将结果配置为 `ADMIN_API_TOKEN`。调用方通过 `Authorization: Bearer <token>` 访问管理接口；不要使用 `NEXT_PUBLIC_` 前缀，也不要把 Token 写入仓库、日志或命令行参数。更换环境变量并重新部署即可撤销旧 Token。
 
 在 Cloudflare 控制台创建 Managed Turnstile Widget，将正式域名加入 Hostname Management，再把站点密钥与服务端密钥写入生产环境。官方测试密钥只由 `npm run dev` 在未配置密钥时自动使用，生产环境会拒绝测试密钥。
 
@@ -132,7 +141,7 @@ npm run db:studio   # 打开 Prisma Studio
 - 公开首页不会触发服务器侧探测，只读取 PostgreSQL 中最近一次服务器结果，避免访客造成函数和数据库请求风暴。
 - Vercel Cron 通过受保护的 `/api/monitor/run` 批量探测，固定并发为 4；管理员新增或编辑站点时可通过 `/api/monitor/check` 立即检测单站。
 - 服务端会拒绝本机、私网、保留地址、非标准端口和不安全重定向，并在 IPv4/IPv6 公网地址之间回退；状态、检测时间和延迟写回 PostgreSQL。
-- 管理写接口要求有效的 JWT HttpOnly Cookie。
+- 管理写接口要求有效的 JWT HttpOnly Cookie，或 `ADMIN_API_TOKEN` 对应的 Bearer Token。
 - 语言偏好保存在浏览器；主题配置保存在数据库并对所有访客生效。
 
 ## API
@@ -154,8 +163,8 @@ npm run db:studio   # 打开 Prisma Studio
 
 - 服务器侧只监控公网 HTTP/HTTPS 地址，并固定使用 80/443 端口；浏览器侧探测遵循访客自身网络与浏览器安全策略。
 - DNS 解析结果和每次重定向都会重新校验；连接固定到已校验的 IP，避免 DNS 重绑定。
-- 公开访客不能触发服务器出站请求；单站与批量服务器探测分别要求管理员会话或 Cron Bearer Token。
-- 密码 Hash、JWT 密钥和 Turnstile 服务端密钥仅从服务端环境变量读取。
+- 公开访客不能触发服务器出站请求；单站检测要求管理员会话或管理 API Token，批量检测还支持独立的 Cron Bearer Token。
+- 密码 Hash、JWT 密钥、管理 API Token 和 Turnstile 服务端密钥仅从服务端环境变量读取。
 - 登录接口始终通过 Cloudflare Siteverify 验证 Turnstile 令牌，并校验 action；正式环境还可通过 `TURNSTILE_ALLOWED_HOSTNAMES` 校验主机名。
 - Turnstile 令牌只能使用一次且五分钟后过期；失败登录会重置挑战。
 - 登录失败按哈希后的客户端 IP 写入 PostgreSQL：15 分钟内失败 5 次后暂停 15 分钟，数据库中不保存原始 IP。
