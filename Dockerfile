@@ -1,5 +1,3 @@
-# syntax=docker/dockerfile:1
-
 # ---------- Base: Node 22 (project requires >=22.12 <23) ----------
 FROM node:22-alpine AS base
 
