@@ -1,0 +1,56 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: sentinelnav:latest
+    container_name: sentinelnav-app
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      # 应用通过容器内网访问 db 服务
+      DATABASE_URL: postgresql://sentinelnav:${DB_PASSWORD:-sentinelnav}@db:5432/sentinelnav?sslmode=disable
+      DIRECT_DATABASE_URL: postgresql://sentinelnav:${DB_PASSWORD:-sentinelnav}@db:5432/sentinelnav?sslmode=disable
+      DATABASE_POOL_MAX: ${DATABASE_POOL_MAX:-3}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD_HASH: ${ADMIN_PASSWORD_HASH:?请在 .env 中设置 ADMIN_PASSWORD_HASH（可用 node scripts/generate-password.mjs '密码' 生成）}
+      JWT_SECRET: ${JWT_SECRET:?请在 .env 中设置 JWT_SECRET（至少 32 位随机字符，可用 openssl rand -base64 48 生成）}
+      NEXT_PUBLIC_TURNSTILE_SITE_KEY: ${NEXT_PUBLIC_TURNSTILE_SITE_KEY:-1x00000000000000000000AA}
+      TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:-1x0000000000000000000000000000000AA}
+      TURNSTILE_ALLOWED_HOSTNAMES: ${TURNSTILE_ALLOWED_HOSTNAMES:-localhost}
+      TRUST_PROXY_HEADERS: ${TRUST_PROXY_HEADERS:-false}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - sentinelnav
+
+  db:
+    image: postgres:16-alpine
+    container_name: sentinelnav-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: sentinelnav
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-sentinelnav}
+      POSTGRES_DB: sentinelnav
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sentinelnav -d sentinelnav"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    networks:
+      - sentinelnav
+    # 如需从宿主机直接访问数据库，取消下面注释
+    # ports:
+    #   - "5432:5432"
+
+networks:
+  sentinelnav:
+    driver: bridge
+
+volumes:
+  db-data:

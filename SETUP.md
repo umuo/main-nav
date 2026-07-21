@@ -54,3 +54,19 @@ npm run dev:next
 ```
 
 完整部署、迁移和安全说明见 `README.md`。
+
+## 5. 使用 Docker 部署
+
+项目包含多阶段 `Dockerfile`（基于 Next.js standalone 输出）与 `docker-compose.yml`（app + PostgreSQL 16）。
+
+```bash
+cp .env.docker.sample .env
+# 编辑 .env，至少设置 DB_PASSWORD、ADMIN_PASSWORD_HASH、JWT_SECRET
+docker compose up -d --build
+```
+
+首次启动时容器会自动执行 `prisma migrate deploy` 应用迁移，然后启动 Next.js。访问 [http://localhost:3000](http://localhost:3000)。
+
+- 数据库数据持久化在命名卷 `db-data` 中。
+- 如已有外部 PostgreSQL，可只用 Dockerfile 构建镜像，通过环境变量注入 `DATABASE_URL` 运行。
+- 经过反向代理（Nginx/Caddy）时，把 `.env` 中的 `TRUST_PROXY_HEADERS` 设为 `true`。
