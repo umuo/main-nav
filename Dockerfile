@@ -50,7 +50,15 @@ COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/prisma.config.ts ./prisma.config.ts
 COPY --from=builder /app/node_modules/prisma ./node_modules/prisma
 COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
-COPY --from=builder /app/node_modules/.bin/prisma ./node_modules/.bin/prisma
+# prisma.config.ts does `import dotenv from 'dotenv'`; the CLI needs it at
+# config-load time, so include it even though it's only a devDependency.
+COPY --from=builder /app/node_modules/dotenv ./node_modules/dotenv
+# Create a symlink to the Prisma CLI instead of copying the .bin shim.
+# The shim resolves its WASM engines via __dirname; a copied file lands in
+# .bin/ (no sibling wasm), while a symlink keeps __dirname at prisma/build/
+# where prisma_schema_build_bg.wasm and schema_engine_bg.wasm live.
+RUN mkdir -p ./node_modules/.bin \
+ && ln -sf ../prisma/build/index.js ./node_modules/.bin/prisma
 
 COPY --chown=nextjs:nodejs docker-entrypoint.sh ./docker-entrypoint.sh
 RUN chmod +x ./docker-entrypoint.sh
