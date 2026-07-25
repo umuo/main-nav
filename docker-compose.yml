@@ -3,6 +3,10 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        # NEXT_PUBLIC_* variables are embedded into the browser bundle by next build.
+        # Only pass the public site key here; keep TURNSTILE_SECRET_KEY at runtime.
+        NEXT_PUBLIC_TURNSTILE_SITE_KEY: ${NEXT_PUBLIC_TURNSTILE_SITE_KEY:-1x00000000000000000000AA}
     image: sentinelnav:latest
     container_name: sentinelnav-app
     restart: unless-stopped

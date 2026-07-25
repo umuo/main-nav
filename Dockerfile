@@ -22,7 +22,10 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
+ARG NEXT_PUBLIC_TURNSTILE_SITE_KEY
+
 ENV NEXT_TELEMETRY_DISABLED=1
+ENV NEXT_PUBLIC_TURNSTILE_SITE_KEY=${NEXT_PUBLIC_TURNSTILE_SITE_KEY}
 
 # Build (script already runs `prisma generate` first)
 RUN npm run build
