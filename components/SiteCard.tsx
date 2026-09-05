@@ -1,5 +1,13 @@
 import React, { useState } from 'react';
-import { ArrowUpRight, Clock3, Globe2, Laptop2, RefreshCw, Server, Zap } from 'lucide-react';
+import {
+  ArrowUpRight,
+  ChevronDown,
+  Globe2,
+  Laptop2,
+  RefreshCw,
+  Server,
+  Star,
+} from 'lucide-react';
 import { ClientConnectivity, Website } from '../types';
 import { getFaviconUrl } from '../services/monitorService';
 import { useTranslation } from '../contexts/LanguageContext';
@@ -8,8 +16,11 @@ interface SiteCardProps {
   site: Website;
   clientConnectivity: ClientConnectivity;
   onRefreshOne: (id: string) => void;
+  categoryName: string;
+  favorite: boolean;
+  onToggleFavorite: (id: string) => void;
+  onVisit: (id: string) => void;
 }
-
 const getHostname = (url: string) => {
   try {
     return new URL(url).hostname.replace(/^www\./, '');
@@ -18,146 +29,168 @@ const getHostname = (url: string) => {
   }
 };
 
-const SiteCard: React.FC<SiteCardProps> = ({ site, clientConnectivity, onRefreshOne }) => {
-  const { t } = useTranslation();
+export default function SiteCard({
+  site,
+  clientConnectivity,
+  onRefreshOne,
+  categoryName,
+  favorite,
+  onToggleFavorite,
+  onVisit,
+}: SiteCardProps) {
+  const { t, language } = useTranslation();
+  const zh = language === 'zh';
   const iconUrl = site.iconUrl || getFaviconUrl(site.url);
   const [failedIconUrl, setFailedIconUrl] = useState('');
+  const [expanded, setExpanded] = useState(false);
   const hostname = getHostname(site.url);
-  const showIcon = failedIconUrl !== iconUrl;
-  const clientStatusText = clientConnectivity.reason === 'local-network-permission-required'
-    ? t('connectivity.permissionRequired')
-    : ['insecure-context', 'local-network-denied', 'mixed-content'].includes(clientConnectivity.reason || '')
-      ? t('connectivity.browserLimited')
-      : t(`status.${clientConnectivity.status}`);
-  const clientReasonText = clientConnectivity.reason
-    ? t(`connectivity.reason.${clientConnectivity.reason}`)
-    : '';
-  const serverReasonText = site.serverReason
-    ? t(`connectivity.serverReason.${site.serverReason}`)
-    : '';
-
-  const formatTime = (timestamp: number) => {
-    if (timestamp === 0) return t('status.never');
-    return new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  };
-
-  const handleCardClick = () => {
-    window.open(site.url, '_blank', 'noopener,noreferrer');
-  };
-
-  const handleCardKeyDown = (event: React.KeyboardEvent<HTMLElement>) => {
-    if (event.key === 'Enter' || event.key === ' ') {
-      event.preventDefault();
-      handleCardClick();
-    }
-  };
-
+  const clientStatusText =
+    clientConnectivity.reason === 'local-network-permission-required'
+      ? t('connectivity.permissionRequired')
+      : ['insecure-context', 'local-network-denied', 'mixed-content'].includes(
+            clientConnectivity.reason || '',
+          )
+        ? t('connectivity.browserLimited')
+        : t(`status.${clientConnectivity.status}`);
+  const formatTime = (value: number) =>
+    value
+      ? new Date(value).toLocaleTimeString(zh ? 'zh-CN' : 'en', {
+          hour: '2-digit',
+          minute: '2-digit',
+        })
+      : t('status.never');
+  const safeUrl = /^https?:\/\//i.test(site.url) ? site.url : undefined;
   return (
-    <article
-      role="link"
-      tabIndex={0}
-      aria-label={`${site.title} · ${t('connectivity.client')} ${clientStatusText}`}
-      onClick={handleCardClick}
-      onKeyDown={handleCardKeyDown}
-      className={`site-card site-card-${clientConnectivity.status} group flex h-full cursor-pointer flex-col rounded-[1.35rem] p-5`}
-    >
-      <div className="relative z-10 flex items-start justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-3">
-          <div className="site-icon flex h-12 w-12 flex-none items-center justify-center overflow-hidden rounded-2xl">
-            {showIcon ? (
-              // The favicon host is administrator-configured, so Next Image cannot use a static remote allowlist.
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={iconUrl}
-                alt=""
-                className="h-full w-full object-contain p-2.5"
-                onError={() => setFailedIconUrl(iconUrl)}
-              />
-            ) : (
-              <Globe2 size={21} aria-hidden="true" className="text-[var(--accent-color)]" />
-            )}
-          </div>
-          <div className="min-w-0">
-            <span
-              className={`status-badge status-${clientConnectivity.status}`}
-              title={clientReasonText || undefined}
-            >
-              {t('connectivity.client')} · {clientStatusText}
-            </span>
-          </div>
-        </div>
-
-        <button
-          type="button"
-          onClick={(event) => {
-            event.stopPropagation();
-            onRefreshOne(site.id);
-          }}
-          className="icon-button relative z-20 flex h-9 w-9 flex-none items-center justify-center rounded-xl"
-          title={t('dashboard.checkNow')}
-          aria-label={`${t('dashboard.checkNow')} · ${site.title}`}
+    <article className={`bookmark-card ${favorite ? 'is-favorite' : ''}`}>
+      <div className="bookmark-main">
+        <a
+          className="bookmark-link"
+          href={safeUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={() => onVisit(site.id)}
+          aria-label={`${site.title} · ${zh ? '在新标签页打开' : 'Open in a new tab'}`}
         >
-          <RefreshCw size={15} className={clientConnectivity.status === 'checking' ? 'animate-spin' : ''} />
+          <div className="bookmark-heading">
+            <div className="bookmark-icon">
+              {failedIconUrl !== iconUrl ? (
+                // Administrators can configure any favicon host.
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={iconUrl}
+                  alt=""
+                  loading="lazy"
+                  decoding="async"
+                  onError={() => setFailedIconUrl(iconUrl)}
+                />
+              ) : (
+                <span>
+                  {site.title.slice(0, 1).toLocaleUpperCase() || (
+                    <Globe2 size={22} />
+                  )}
+                </span>
+              )}
+            </div>
+            <div className="bookmark-title">
+              <h3>{site.title}</h3>
+              <span>{hostname}</span>
+            </div>
+            <ArrowUpRight className="bookmark-arrow" size={17} />
+          </div>
+          <p className="bookmark-description">
+            {site.description ||
+              (zh
+                ? `前往 ${site.title}，发现更多可能。`
+                : `Visit ${site.title} and discover more.`)}
+          </p>
+        </a>
+        <button
+          className={`favorite-button ${favorite ? 'is-active' : ''}`}
+          onClick={() => onToggleFavorite(site.id)}
+          aria-pressed={favorite}
+          aria-label={`${favorite ? (zh ? '取消收藏' : 'Remove favorite') : zh ? '收藏网站' : 'Favorite website'} · ${site.title}`}
+          title={
+            favorite
+              ? zh
+                ? '取消收藏'
+                : 'Remove favorite'
+              : zh
+                ? '收藏网站'
+                : 'Favorite website'
+          }
+        >
+          <Star size={17} fill={favorite ? 'currentColor' : 'none'} />
         </button>
       </div>
-
-      <div className="relative z-10 mt-6">
-        <h3 className="line-clamp-1 text-[1.08rem] font-semibold tracking-[-0.02em] text-[var(--text-primary)] transition-colors group-hover:text-[var(--accent-color)]">
-          {site.title}
-        </h3>
-        <p className="mt-2 line-clamp-2 min-h-10 text-sm leading-5 text-[var(--text-secondary)]">
-          {site.description || hostname}
-        </p>
+      <div className="bookmark-footer">
+        <span className="bookmark-category">{categoryName}</span>
+        <button
+          className={`bookmark-status status-dot-${clientConnectivity.status}`}
+          onClick={() => setExpanded(!expanded)}
+          aria-expanded={expanded}
+          aria-controls={`status-${site.id}`}
+          aria-label={`${zh ? '连通性详情' : 'Connectivity details'} · ${site.title}`}
+        >
+          <span />
+          {clientStatusText}
+          <ChevronDown size={12} className={expanded ? 'rotate-180' : ''} />
+        </button>
       </div>
-
-      <div className="relative z-10 mt-auto pt-6">
-        <div className="mb-3 flex items-center gap-2 text-xs font-medium text-[var(--text-tertiary)]">
-          <Globe2 size={13} aria-hidden="true" />
-          <span className="min-w-0 flex-1 truncate">{hostname}</span>
-          <ArrowUpRight size={14} aria-hidden="true" className="transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
-        </div>
-        <div className="space-y-2 border-t border-[var(--glass-border)] pt-3 text-xs">
-          <div className="flex items-center justify-between gap-3 text-[var(--text-secondary)]">
-            <span className="flex min-w-0 items-center gap-1.5 font-semibold">
-              <Laptop2 size={13} aria-hidden="true" className="text-[var(--accent-color)]" />
+      {expanded && (
+        <div className="bookmark-details" id={`status-${site.id}`}>
+          <div>
+            <span>
+              <Laptop2 size={13} />
               {t('connectivity.client')}
             </span>
-            <span className="flex items-center gap-1.5">
-              <Clock3 size={12} aria-hidden="true" />
-              {formatTime(clientConnectivity.lastChecked)}
-              {clientConnectivity.status === 'online' && clientConnectivity.latency !== undefined && (
-                <span className="flex items-center gap-1 font-semibold text-[var(--status-online-text)]">
-                  <Zap size={11} aria-hidden="true" />
-                  {clientConnectivity.latency} ms
-                </span>
-              )}
-            </span>
+            <strong>
+              {clientStatusText}
+              {clientConnectivity.status === 'online' &&
+              clientConnectivity.latency !== undefined
+                ? ` · ${clientConnectivity.latency} ms`
+                : ''}
+            </strong>
           </div>
-
-          <div className="flex items-start justify-between gap-3 rounded-lg bg-[var(--surface-muted)] px-2.5 py-2 text-[var(--text-secondary)]">
-            <span className="flex flex-none items-center gap-1.5 pt-0.5 font-semibold">
-              <Server size={13} aria-hidden="true" />
+          {clientConnectivity.reason && (
+            <p>{t(`connectivity.reason.${clientConnectivity.reason}`)}</p>
+          )}
+          <div>
+            <span>
+              <Server size={13} />
               {t('connectivity.server')}
             </span>
-            <span className="min-w-0 text-right">
-              <span
-                className={`block font-semibold ${site.status === 'online' ? 'text-[var(--status-online-text)]' : site.status === 'offline' ? 'text-[var(--status-offline-text)]' : 'text-[var(--text-tertiary)]'}`}
-              >
-                {t(`status.${site.status}`)}
-                {site.serverStatusCode ? ` · HTTP ${site.serverStatusCode}` : ''}
-                {site.status === 'online' && site.latency !== undefined ? ` · ${site.latency} ms` : ''}
-              </span>
-              {serverReasonText && (
-                <span className="mt-1 block max-w-48 text-[10px] leading-4 text-[var(--text-tertiary)]">
-                  {serverReasonText}
-                </span>
-              )}
+            <strong>
+              {t(`status.${site.status}`)}
+              {site.serverStatusCode ? ` · HTTP ${site.serverStatusCode}` : ''}
+              {site.status === 'online' && site.latency !== undefined
+                ? ` · ${site.latency} ms`
+                : ''}
+            </strong>
+          </div>
+          {site.serverReason && (
+            <p>{t(`connectivity.serverReason.${site.serverReason}`)}</p>
+          )}
+          <div className="bookmark-check">
+            <span>
+              {zh ? '上次检测' : 'Last checked'}{' '}
+              {formatTime(clientConnectivity.lastChecked)}
             </span>
+            <button
+              onClick={() => onRefreshOne(site.id)}
+              disabled={clientConnectivity.status === 'checking'}
+              aria-label={`${t('dashboard.checkNow')} · ${site.title}`}
+            >
+              <RefreshCw
+                size={12}
+                className={
+                  clientConnectivity.status === 'checking' ? 'animate-spin' : ''
+                }
+              />
+              {zh ? '重新检测' : 'Check again'}
+            </button>
           </div>
         </div>
-      </div>
+      )}
     </article>
   );
-};
-
-export default SiteCard;
+}

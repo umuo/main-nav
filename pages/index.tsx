@@ -1,28 +1,21 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  Activity,
-  AlertTriangle,
   ArrowLeft,
   Braces,
   CheckCircle2,
   Globe2,
   Languages,
-  Laptop2,
   LayoutDashboard,
-  LockKeyhole,
   LogIn,
   RefreshCcw,
-  Search,
-  SearchX,
   ShieldCheck,
-  Sparkles,
 } from 'lucide-react';
 import { Website, ViewState, Category, ClientConnectivity, ClientConnectivityMap, MonitorRunSummary } from '../types';
 import { CHECK_INTERVAL_MS } from '../constants';
 import { useTranslation } from '../contexts/LanguageContext';
 import { probeWebsiteFromBrowser } from '../services/monitorService';
 
-import SiteCard from '../components/SiteCard';
+import Navigation from '../components/Navigation';
 import AdminDashboard from '../components/AdminDashboard';
 import Captcha from '../components/Captcha';
 
@@ -58,8 +51,8 @@ export default function Home() {
   const [view, setView] = useState<ViewState>('dashboard');
   const [websites, setWebsites] = useState<Website[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
-  const [selectedCategory, setSelectedCategory] = useState<string>('all');
-  const [searchTerm, setSearchTerm] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
   const websitesRef = useRef<Website[]>([]);
   const [clientConnectivity, setClientConnectivity] = useState<ClientConnectivityMap>({});
@@ -80,7 +73,11 @@ export default function Home() {
 
   useEffect(() => {
     if (!clientConnectivityLoadedRef.current) return;
-    localStorage.setItem(CLIENT_CONNECTIVITY_STORAGE_KEY, JSON.stringify(clientConnectivity));
+    try {
+      localStorage.setItem(CLIENT_CONNECTIVITY_STORAGE_KEY, JSON.stringify(clientConnectivity));
+    } catch {
+      // Connectivity still works when browser storage is unavailable.
+    }
   }, [clientConnectivity]);
 
   const checkSession = useCallback(async () => {
@@ -88,7 +85,6 @@ export default function Home() {
       const res = await fetch('/api/auth/me');
       if (res.ok) {
         setIsAdminAuthenticated(true);
-        setView('admin');
       } else {
         setIsAdminAuthenticated(false);
       }
@@ -236,8 +232,10 @@ export default function Home() {
   }, []);
 
   const fetchWebsites = useCallback(async () => {
+    setLoadError(false);
     try {
       const res = await fetch('/api/sites');
+      if (!res.ok) throw new Error('Failed to load websites');
       if (res.ok) {
         const data = await res.json();
         websitesRef.current = data;
@@ -258,7 +256,10 @@ export default function Home() {
 
       }
     } catch (error) {
-      console.error('Failed to fetch websites', error);
+      console.warn('Failed to fetch websites', error);
+      setLoadError(true);
+    } finally {
+      setIsLoading(false);
     }
   }, [checkAllClientSites]);
 
@@ -430,21 +431,26 @@ export default function Home() {
 
   const getClientConnectivity = (site: Website) => clientConnectivity[site.id] || emptyClientConnectivity();
   const onlineCount = websites.filter(site => getClientConnectivity(site).status === 'online').length;
-  const attentionCount = websites.filter(site => {
-    const status = getClientConnectivity(site).status;
-    return status === 'offline' || status === 'unknown';
-  }).length;
-  const availability = websites.length === 0 ? 100 : Math.round((onlineCount / websites.length) * 100);
-  const normalizedSearch = searchTerm.trim().toLowerCase();
-  const filteredWebsites = websites.filter(site => {
-    const inCategory = selectedCategory === 'all' || site.categoryId === selectedCategory;
-    const matchesSearch = normalizedSearch.length === 0 ||
-      site.title.toLowerCase().includes(normalizedSearch) ||
-      site.url.toLowerCase().includes(normalizedSearch) ||
-      site.description?.toLowerCase().includes(normalizedSearch);
-    return inCategory && matchesSearch;
-  });
-  const isRefreshing = websites.some(site => getClientConnectivity(site).status === 'checking');
+  const availability = websites.length === 0 ? 0 : Math.round((onlineCount / websites.length) * 100);
+  if (view === 'dashboard') {
+    return (
+      <Navigation
+        websites={websites}
+        categories={categories}
+        connectivity={clientConnectivity}
+        loading={isLoading}
+        error={loadError}
+        onRetry={() => {
+          setIsLoading(true);
+          void fetchWebsites();
+          void fetchCategories();
+        }}
+        onManage={checkAdminAccess}
+        onRefresh={() => void checkAllClientSites(websitesRef.current, true)}
+        onRefreshOne={id => void checkClientSite(id, websitesRef.current, true)}
+      />
+    );
+  }
 
   return (
     <div className="app-shell flex min-h-screen flex-col">
@@ -469,16 +475,6 @@ export default function Home() {
           </button>
 
           <nav className="flex items-center gap-1.5 sm:gap-2">
-            {view === 'dashboard' && (
-              <span className="mr-1 hidden sm:block">
-                <span className={`status-badge ${attentionCount > 0 ? 'status-offline' : 'status-online'}`}>
-                  {attentionCount > 0
-                    ? t('dashboard.attentionSummary', { count: attentionCount })
-                    : t('dashboard.operationalSummary')}
-                </span>
-              </span>
-            )}
-
             <button
               onClick={toggleLanguage}
               className="icon-button flex h-9 items-center gap-1.5 rounded-xl px-2.5 text-xs font-bold uppercase"
@@ -488,147 +484,15 @@ export default function Home() {
               <span>{language}</span>
             </button>
 
-            {view === 'dashboard' ? (
-              <button
-                onClick={checkAdminAccess}
-                className="icon-button flex h-9 w-9 items-center justify-center rounded-xl"
-                title={t('dashboard.adminLogin')}
-              >
-                <LockKeyhole size={15} />
-              </button>
-            ) : (
-              <button
-                onClick={() => setView('dashboard')}
-                className="secondary-button flex h-9 items-center gap-2 rounded-xl px-3 text-sm font-semibold"
-              >
-                <LayoutDashboard size={16} />
-                <span className="hidden sm:inline">{t('dashboard.dashboardLink')}</span>
-              </button>
-            )}
+            <button onClick={() => setView('dashboard')} className="secondary-button flex h-9 items-center gap-2 rounded-xl px-3 text-sm font-semibold">
+              <LayoutDashboard size={16} /><span>{t('dashboard.dashboardLink')}</span>
+            </button>
           </nav>
         </div>
       </header>
 
       <main className="flex-grow">
         <div className="mx-auto w-full max-w-[1400px] px-4 py-7 sm:px-6 sm:py-10 lg:px-8">
-
-          {view === 'dashboard' && (
-            <div className="animate-fade-in-up">
-              <section className="hero-panel rounded-[1.75rem] p-5 sm:p-7 lg:p-8">
-                <div className="relative z-10 flex flex-col justify-between gap-7 lg:flex-row lg:items-start">
-                  <div className="max-w-2xl">
-                    <span className="eyebrow">
-                      <Sparkles size={14} aria-hidden="true" />
-                      {t('dashboard.workspace')}
-                    </span>
-                    <h2 className="mt-4 text-3xl font-semibold tracking-[-0.045em] text-[var(--text-primary)] sm:text-4xl lg:text-[2.75rem]">
-                      {t('dashboard.systemStatus')}
-                    </h2>
-                    <p className="mt-3 max-w-xl text-sm leading-6 text-[var(--text-secondary)] sm:text-base">
-                      {t('dashboard.monitoringDesc', { count: websites.length })}
-                    </p>
-                    <div className="mt-5 flex items-center gap-2.5 text-sm font-medium text-[var(--text-secondary)]">
-                      <span className={`h-2.5 w-2.5 rounded-full ${attentionCount > 0 ? 'bg-[#f04438]' : 'bg-[#12b76a]'} shadow-[0_0_0_5px_color-mix(in_srgb,currentColor_10%,transparent)]`} />
-                      {attentionCount > 0
-                        ? t('dashboard.attentionSummary', { count: attentionCount })
-                        : t('dashboard.operationalSummary')}
-                    </div>
-                  </div>
-
-                  <button
-                    onClick={() => void checkAllClientSites(websitesRef.current, true)}
-                    disabled={isRefreshing || websites.length === 0}
-                    className="primary-button flex w-full items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
-                  >
-                    <RefreshCcw size={16} className={isRefreshing ? 'animate-spin' : ''} />
-                    {t('dashboard.refreshAll')}
-                  </button>
-                </div>
-
-                <div className="relative z-10 mt-5 flex max-w-3xl items-start gap-2.5 rounded-xl border border-[var(--glass-border)] bg-[var(--surface-muted)]/70 px-3.5 py-3 text-xs leading-5 text-[var(--text-secondary)]">
-                  <Laptop2 size={15} className="mt-0.5 flex-none text-[var(--accent-color)]" aria-hidden="true" />
-                  <span>{t('dashboard.clientProbeNotice')}</span>
-                </div>
-
-                <div className="relative z-10 mt-7 grid grid-cols-1 gap-3 sm:grid-cols-3">
-                  <div className="metric-card rounded-2xl p-4">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-semibold text-[var(--text-secondary)]">{t('dashboard.totalServices')}</span>
-                      <Globe2 size={16} className="text-[var(--accent-color)]" />
-                    </div>
-                    <strong className="mt-3 block text-2xl font-semibold tracking-[-0.04em]">{websites.length}</strong>
-                  </div>
-                  <div className="metric-card rounded-2xl p-4">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-semibold text-[var(--text-secondary)]">{t('dashboard.availability')}</span>
-                      <Activity size={16} className="text-[var(--status-online-text)]" />
-                    </div>
-                    <strong className="mt-3 block text-2xl font-semibold tracking-[-0.04em]">{availability}%</strong>
-                  </div>
-                  <div className="metric-card rounded-2xl p-4">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-semibold text-[var(--text-secondary)]">{t('dashboard.needsAttention')}</span>
-                      <AlertTriangle size={16} className={attentionCount > 0 ? 'text-[var(--status-offline-text)]' : 'text-[var(--text-tertiary)]'} />
-                    </div>
-                    <strong className="mt-3 block text-2xl font-semibold tracking-[-0.04em]">{attentionCount}</strong>
-                  </div>
-                </div>
-              </section>
-
-              <section className="control-surface mt-5 flex flex-col gap-3 rounded-2xl p-2.5 sm:flex-row sm:items-center sm:justify-between">
-                <div className="scrollbar-hide flex min-w-0 gap-1 overflow-x-auto">
-                  <button
-                    onClick={() => setSelectedCategory('all')}
-                    className={`category-pill whitespace-nowrap rounded-xl px-3.5 py-2 text-sm font-semibold ${selectedCategory === 'all' ? 'category-pill-active' : ''}`}
-                  >
-                    {t('dashboard.all')}
-                  </button>
-                  {categories.map(cat => (
-                    <button
-                      key={cat.id}
-                      onClick={() => setSelectedCategory(cat.id)}
-                      className={`category-pill whitespace-nowrap rounded-xl px-3.5 py-2 text-sm font-semibold ${selectedCategory === cat.id ? 'category-pill-active' : ''}`}
-                    >
-                      {cat.id === 'default' ? t('dashboard.general') : cat.name}
-                    </button>
-                  ))}
-                </div>
-
-                <label className="relative block w-full flex-none sm:w-64 lg:w-72">
-                  <Search className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--text-tertiary)]" size={16} />
-                  <input
-                    type="search"
-                    value={searchTerm}
-                    onChange={(event) => setSearchTerm(event.target.value)}
-                    placeholder={t('dashboard.searchPlaceholder')}
-                    className="field-control h-10 rounded-xl py-2 pl-10 pr-3 text-sm"
-                  />
-                </label>
-              </section>
-
-              <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                {filteredWebsites.map(site => (
-                  <SiteCard
-                    key={site.id}
-                    site={site}
-                    clientConnectivity={getClientConnectivity(site)}
-                    onRefreshOne={(id) => void checkClientSite(id, websitesRef.current, true)}
-                  />
-                ))}
-                {filteredWebsites.length === 0 && (
-                  <div className="glass-panel col-span-full flex min-h-64 flex-col items-center justify-center rounded-[1.5rem] border-dashed p-10 text-center">
-                    <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-[var(--accent-soft)] text-[var(--accent-color)]">
-                      {normalizedSearch ? <SearchX size={25} /> : <Globe2 size={25} />}
-                    </div>
-                    <p className="text-base font-semibold text-[var(--text-primary)]">{t('dashboard.noSites')}</p>
-                    <button onClick={checkAdminAccess} className="mt-2 text-sm font-semibold text-[var(--accent-color)] hover:underline">
-                      {t('dashboard.loginToAdd')}
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
 
           {view === 'login' && (
             <div className="grid min-h-[calc(100vh-11rem)] animate-fade-in items-stretch gap-5 lg:grid-cols-[1.05fr_0.95fr]">
@@ -674,9 +538,10 @@ export default function Home() {
                     )}
 
                     <div>
-                      <label className="mb-1.5 block text-sm font-semibold text-[var(--text-secondary)]">{t('login.username')}</label>
+                      <label htmlFor="login-username" className="mb-1.5 block text-sm font-semibold text-[var(--text-secondary)]">{t('login.username')}</label>
                       <input
                         type="text"
+                        id="login-username"
                         autoComplete="username"
                         value={loginUsername}
                         onChange={(e) => setLoginUsername(e.target.value)}
@@ -687,9 +552,10 @@ export default function Home() {
                     </div>
 
                     <div>
-                      <label className="mb-1.5 block text-sm font-semibold text-[var(--text-secondary)]">{t('login.password')}</label>
+                      <label htmlFor="login-password" className="mb-1.5 block text-sm font-semibold text-[var(--text-secondary)]">{t('login.password')}</label>
                       <input
                         type="password"
+                        id="login-password"
                         autoComplete="current-password"
                         value={loginPassword}
                         onChange={(e) => setLoginPassword(e.target.value)}

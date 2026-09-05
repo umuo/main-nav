@@ -16,7 +16,8 @@ export const LanguageProvider: React.FC<{ children: ReactNode }> = ({ children }
 
   useEffect(() => {
     // Optionally persist language preference
-    const saved = localStorage.getItem('sentinel_nav_lang');
+    let saved: string | null = null;
+    try { saved = localStorage.getItem('sentinel_nav_lang'); } catch { /* Use default language. */ }
     if (saved === 'en' || saved === 'zh') {
       // The persisted client preference is only available after hydration.
       // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -24,9 +25,11 @@ export const LanguageProvider: React.FC<{ children: ReactNode }> = ({ children }
     }
   }, []);
 
+  useEffect(() => { document.documentElement.lang = language === 'zh' ? 'zh-CN' : 'en'; }, [language]);
+
   const changeLanguage = (lang: Language) => {
     setLanguage(lang);
-    localStorage.setItem('sentinel_nav_lang', lang);
+    try { localStorage.setItem('sentinel_nav_lang', lang); } catch { /* Keep in-memory preference. */ }
   };
 
   const t = (path: string, params?: Record<string, string | number>): string => {
