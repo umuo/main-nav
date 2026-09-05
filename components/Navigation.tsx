@@ -19,6 +19,8 @@ import {
   LayoutList,
   Menu,
   Plus,
+  PanelLeftClose,
+  PanelLeftOpen,
   RefreshCw,
   Search,
   SearchX,
@@ -69,6 +71,7 @@ export default function Navigation({
   const [sort, setSort] = useState('default');
   const [status, setStatus] = useState('all');
   const [menuOpen, setMenuOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [showStatus, setShowStatus] = useState(false);
   const [ready, setReady] = useState(false);
   const [storageError, setStorageError] = useState(false);
@@ -88,6 +91,7 @@ export default function Navigation({
       setFavorites(ids(saved.favorites));
       setRecent(ids(saved.recent).slice(0, 12));
       if (saved.layout === 'list') setLayout('list');
+      setSidebarCollapsed(saved.sidebarCollapsed === true);
     } catch {
       /* Missing or invalid preferences fall back to defaults. */
     }
@@ -100,14 +104,14 @@ export default function Navigation({
     try {
       localStorage.setItem(
         PREFERENCES_KEY,
-        JSON.stringify({ favorites, recent, layout }),
+        JSON.stringify({ favorites, recent, layout, sidebarCollapsed }),
       );
     } catch {
       // Surface persistence failures so users know their preferences are session-only.
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setStorageError(true);
     }
-  }, [favorites, recent, layout, ready]);
+  }, [favorites, recent, layout, sidebarCollapsed, ready]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -162,6 +166,15 @@ export default function Navigation({
     };
   }, [menuOpen]);
 
+  useEffect(() => {
+    const desktop = window.matchMedia('(min-width: 801px)');
+    const closeMobileMenu = () => {
+      if (desktop.matches) setMenuOpen(false);
+    };
+    desktop.addEventListener('change', closeMobileMenu);
+    return () => desktop.removeEventListener('change', closeMobileMenu);
+  }, []);
+
   const chooseCollection = (value: Collection) => {
     setCollection(value);
     setCategory('all');
@@ -182,9 +195,10 @@ export default function Navigation({
     );
   const categoryName = (cat: Category) =>
     cat.id === 'default' ? copy('常用网站', 'General') : cat.name;
-  const onlineCount = websites.filter(
-    (site) => connectivity[site.id]?.status === 'online',
-  ).length;
+  const statusCounts = { online: 0, offline: 0, unknown: 0, checking: 0 };
+  websites.forEach((site) => {
+    statusCounts[connectivity[site.id]?.status || 'unknown'] += 1;
+  });
   const favoriteCount = websites.filter((site) =>
     favorites.includes(site.id),
   ).length;
@@ -240,7 +254,7 @@ export default function Navigation({
     .slice(0, 4);
 
   return (
-    <div className="navigator">
+    <div className={`navigator ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
       <Head>
         <title>
           {copy(
@@ -269,11 +283,14 @@ export default function Navigation({
       )}
       <aside
         ref={sidebarRef}
+        id="workspace-sidebar"
         className={`workspace-sidebar ${menuOpen ? 'is-open' : ''}`}
         aria-label={copy('网站导航', 'Website navigation')}
       >
         <button
           className="workspace-brand"
+          aria-label={t('appName')}
+          title={t('appName')}
           onClick={() => {
             chooseCollection('all');
             reset();
@@ -282,7 +299,7 @@ export default function Navigation({
           <span className="brand-symbol">
             <Compass size={23} />
           </span>
-          <span>
+          <span className="brand-name">
             {t('appName')}
             <small>YOUR DIGITAL COMPASS</small>
           </span>
@@ -296,6 +313,8 @@ export default function Navigation({
               collection === 'all' && category === 'all' ? 'active' : ''
             }
             onClick={() => chooseCollection('all')}
+            aria-label={copy('发现网站', 'Discover')}
+            title={copy('发现网站', 'Discover')}
             aria-current={
               collection === 'all' && category === 'all' ? 'page' : undefined
             }
@@ -307,6 +326,8 @@ export default function Navigation({
           <button
             className={collection === 'favorites' ? 'active' : ''}
             onClick={() => chooseCollection('favorites')}
+            aria-label={copy('我的收藏', 'Favorites')}
+            title={copy('我的收藏', 'Favorites')}
             aria-current={collection === 'favorites' ? 'page' : undefined}
           >
             <Star size={18} />
@@ -316,6 +337,8 @@ export default function Navigation({
           <button
             className={collection === 'recent' ? 'active' : ''}
             onClick={() => chooseCollection('recent')}
+            aria-label={copy('最近访问', 'Recent')}
+            title={copy('最近访问', 'Recent')}
             aria-current={collection === 'recent' ? 'page' : undefined}
           >
             <History size={18} />
@@ -337,6 +360,8 @@ export default function Navigation({
                 key={cat.id}
                 className={category === cat.id ? 'active' : ''}
                 onClick={() => chooseCategory(cat.id)}
+                aria-label={categoryName(cat)}
+                title={categoryName(cat)}
                 aria-current={category === cat.id ? 'page' : undefined}
               >
                 <Icon size={18} />
@@ -371,9 +396,14 @@ export default function Navigation({
               )}
             </span>
           </div>
-          <button className="manage-button" onClick={onManage}>
+          <button
+            className="manage-button"
+            onClick={onManage}
+            aria-label={copy('管理工作台', 'Manage workspace')}
+            title={copy('管理工作台', 'Manage workspace')}
+          >
             <Settings2 size={17} />
-            {copy('管理工作台', 'Manage workspace')}
+            <span>{copy('管理工作台', 'Manage workspace')}</span>
             <ArrowUpRight size={15} />
           </button>
           <p className="sidebar-version">
@@ -386,11 +416,34 @@ export default function Navigation({
         <header className="workspace-topbar">
           <div className="breadcrumb">
             <button
+              className="desktop-sidebar-toggle quiet-button"
+              onClick={() => setSidebarCollapsed((value) => !value)}
+              aria-label={
+                sidebarCollapsed
+                  ? copy('展开侧栏', 'Expand sidebar')
+                  : copy('折叠侧栏', 'Collapse sidebar')
+              }
+              title={
+                sidebarCollapsed
+                  ? copy('展开侧栏', 'Expand sidebar')
+                  : copy('折叠侧栏', 'Collapse sidebar')
+              }
+              aria-expanded={!sidebarCollapsed}
+              aria-controls="workspace-sidebar"
+            >
+              {sidebarCollapsed ? (
+                <PanelLeftOpen size={20} />
+              ) : (
+                <PanelLeftClose size={20} />
+              )}
+            </button>
+            <button
               ref={menuButtonRef}
               className="mobile-menu quiet-button"
               onClick={() => setMenuOpen(!menuOpen)}
               aria-label={copy('展开导航', 'Open navigation')}
               aria-expanded={menuOpen}
+              aria-controls="workspace-sidebar"
             >
               <Menu size={20} />
             </button>
@@ -421,62 +474,99 @@ export default function Navigation({
           </div>
         </header>
         <main id="nav-content" className="workspace-content" tabIndex={-1}>
-          <section className="discovery-hero">
-            <div className="hero-copy">
-              <div className="hero-kicker">
-                <span /> A SPACE FOR YOUR EVERYDAY INTERNET
-              </div>
-              <h1>
-                {copy('好网站，', 'Good places,')}
-                <br />
-                {copy('从这里出发', 'great beginnings')}
-                <span className="orange-period">.</span>
-              </h1>
-              <p>
-                {copy(
-                  '收藏你的热爱，连接无限可能。',
-                  'Keep what inspires you. Find what comes next.',
+          <section
+            className="network-panel"
+            aria-label={copy('连通性概览', 'Connectivity overview')}
+          >
+            <div className="network-header">
+              <button
+                className="network-toggle"
+                onClick={() => setShowStatus(!showStatus)}
+                aria-expanded={showStatus}
+                aria-controls="network-details"
+              >
+                <Activity size={18} />
+                <span>{copy('连通性概览', 'Connectivity overview')}</span>
+                <ChevronDown
+                  size={15}
+                  className={showStatus ? 'rotate-180' : ''}
+                />
+              </button>
+              <div
+                className="network-summary"
+                aria-label={copy(
+                  '当前浏览器检测结果',
+                  'Current browser probe results',
                 )}
-                <br className="mobile-break" />
-                {copy(
-                  ' 让每一次探索，都有方向。',
-                  ' Your corner of the internet, thoughtfully organized.',
+              >
+                {(['online', 'offline', 'unknown', 'checking'] as const).map(
+                  (value) => (
+                    <button
+                      key={value}
+                      className={`network-stat status-dot-${value} ${status === value ? 'is-selected' : ''}`}
+                      onClick={() =>
+                        setStatus((current) =>
+                          current === value ? 'all' : value,
+                        )
+                      }
+                      aria-pressed={status === value}
+                      disabled={loading || error || websites.length === 0}
+                      title={copy('筛选', 'Filter')}
+                    >
+                      <span className="traffic-light" aria-hidden="true" />
+                      <span>{t(`status.${value}`)}</span>
+                      <strong>
+                        {loading || error ? '—' : statusCounts[value]}
+                      </strong>
+                    </button>
+                  ),
                 )}
-              </p>
-              <a className="hero-explore" href="#website-library">
-                {copy('探索我的导航', 'Explore my collection')}
-                <ArrowRight size={16} />
-              </a>
-            </div>
-            <div className="compass-art" aria-hidden="true">
-              <div className="art-grid" />
-              <span className="art-caption">
-                FIND YOUR NEXT
-                <br />
-                GREAT THING.
-              </span>
-              <div className="orbit orbit-one" />
-              <div className="orbit orbit-two" />
-              <div className="compass-disc">
-                <span className="compass-north">N</span>
-                <span className="compass-east">E</span>
-                <span className="compass-south">S</span>
-                <span className="compass-west">W</span>
-                <div className="compass-needle" />
-                <span className="compass-center" />
               </div>
-              <span className="floating-tile tile-code">
-                <Code2 size={24} />
-              </span>
-              <span className="floating-tile tile-spark">
-                <Sparkles size={23} />
-              </span>
-              <span className="floating-tile tile-globe">
-                <Globe2 size={24} />
-              </span>
-              <span className="art-coordinate">EXPLORE / CONNECT / CREATE</span>
-              <span className="art-star">✳</span>
+              <button
+                className="network-refresh"
+                onClick={onRefresh}
+                disabled={
+                  refreshing || loading || error || websites.length === 0
+                }
+                title={t('dashboard.refreshAll')}
+                aria-label={t('dashboard.refreshAll')}
+              >
+                <RefreshCw
+                  size={15}
+                  className={refreshing ? 'animate-spin' : ''}
+                />
+                <span>
+                  {refreshing
+                    ? copy('检测中', 'Checking')
+                    : copy('重新检测', 'Check all')}
+                </span>
+              </button>
             </div>
+            {showStatus && (
+              <div id="network-details" className="network-details">
+                <p>{t('dashboard.clientProbeNotice')}</p>
+                <div>
+                  <label>
+                    {copy('显示状态', 'Show status')}
+                    <select
+                      value={status}
+                      onChange={(e) => setStatus(e.target.value)}
+                    >
+                      <option value="all">
+                        {copy('全部状态', 'All statuses')}
+                      </option>
+                      {['online', 'offline', 'unknown', 'checking'].map(
+                        (value) => (
+                          <option key={value} value={value}>
+                            {t(`status.${value}`)}
+                          </option>
+                        ),
+                      )}
+                    </select>
+                  </label>
+                </div>
+              </div>
+            )}
           </section>
 
           <section
@@ -569,10 +659,10 @@ export default function Navigation({
             <div className="library-heading">
               <div>
                 <div className="section-kicker">YOUR HANDPICKED INTERNET</div>
-                <h2>
+                <h1>
                   {title}
                   <span>{filtered.length.toString().padStart(2, '0')}</span>
-                </h2>
+                </h1>
               </div>
               <button className="add-site-button" onClick={onManage}>
                 <Plus size={16} />
@@ -660,9 +750,9 @@ export default function Navigation({
             {error ? (
               <div className="workspace-empty" role="alert">
                 <Globe2 size={30} />
-                <h3>
+                <h2>
                   {copy('网站暂时没能加载', 'Could not load your websites')}
-                </h3>
+                </h2>
                 <p>
                   {copy(
                     '请检查网络连接，然后重试。',
@@ -729,7 +819,7 @@ export default function Navigation({
                 ) : (
                   <Compass size={32} />
                 )}
-                <h3>
+                <h2>
                   {hasFilters
                     ? copy('换个关键词，继续发现', 'Try another direction')
                     : collection === 'favorites'
@@ -746,7 +836,7 @@ export default function Navigation({
                             '为你的互联网，选一个起点',
                             'Give your internet a starting point',
                           )}
-                </h3>
+                </h2>
                 <p>
                   {hasFilters
                     ? copy(
@@ -788,63 +878,6 @@ export default function Navigation({
             )}
           </section>
 
-          <section className="network-panel">
-            <button
-              className="network-toggle"
-              onClick={() => setShowStatus(!showStatus)}
-              aria-expanded={showStatus}
-              aria-controls="network-details"
-            >
-              <span>
-                <Activity size={16} />
-                {copy('连通性概览', 'Connectivity overview')}
-                <small>
-                  {refreshing
-                    ? copy('检测中', 'Checking')
-                    : `${onlineCount} / ${websites.length} ${copy('当前网络可达', 'reachable')}`}
-                </small>
-              </span>
-              <ChevronDown
-                size={16}
-                className={showStatus ? 'rotate-180' : ''}
-              />
-            </button>
-            {showStatus && (
-              <div id="network-details" className="network-details">
-                <p>{t('dashboard.clientProbeNotice')}</p>
-                <div>
-                  <label>
-                    {copy('显示状态', 'Show status')}
-                    <select
-                      value={status}
-                      onChange={(e) => setStatus(e.target.value)}
-                    >
-                      <option value="all">
-                        {copy('全部状态', 'All statuses')}
-                      </option>
-                      {['online', 'offline', 'unknown', 'checking'].map(
-                        (value) => (
-                          <option key={value} value={value}>
-                            {t(`status.${value}`)}
-                          </option>
-                        ),
-                      )}
-                    </select>
-                  </label>
-                  <button
-                    onClick={onRefresh}
-                    disabled={refreshing || websites.length === 0}
-                  >
-                    <RefreshCw
-                      size={14}
-                      className={refreshing ? 'animate-spin' : ''}
-                    />
-                    {t('dashboard.refreshAll')}
-                  </button>
-                </div>
-              </div>
-            )}
-          </section>
           <footer className="workspace-footer">
             <span>
               <Compass size={14} />

@@ -92,7 +92,7 @@ export default function SiteCard({
               )}
             </div>
             <div className="bookmark-title">
-              <h3>{site.title}</h3>
+              <h2>{site.title}</h2>
               <span>{hostname}</span>
             </div>
             <ArrowUpRight className="bookmark-arrow" size={17} />
@@ -129,9 +129,10 @@ export default function SiteCard({
           onClick={() => setExpanded(!expanded)}
           aria-expanded={expanded}
           aria-controls={`status-${site.id}`}
-          aria-label={`${zh ? '连通性详情' : 'Connectivity details'} · ${site.title}`}
+          aria-label={`${zh ? '连通性详情' : 'Connectivity details'} · ${site.title} · ${clientStatusText}`}
+          title={clientStatusText}
         >
-          <span />
+          <span className="traffic-light" aria-hidden="true" />
           {clientStatusText}
           <ChevronDown size={12} className={expanded ? 'rotate-180' : ''} />
         </button>
