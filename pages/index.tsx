@@ -1,8 +1,11 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import Head from 'next/head';
 import {
   ArrowLeft,
   Braces,
   CheckCircle2,
+  Eye,
+  EyeOff,
   Globe2,
   Languages,
   LayoutDashboard,
@@ -62,6 +65,7 @@ export default function Home() {
 
   const [loginUsername, setLoginUsername] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
+  const [showLoginPassword, setShowLoginPassword] = useState(false);
   const [turnstileToken, setTurnstileToken] = useState('');
   const [captchaRefreshKey, setCaptchaRefreshKey] = useState(0);
   const [loginError, setLoginError] = useState('');
@@ -353,6 +357,7 @@ export default function Home() {
     if (isAdminAuthenticated) {
       setView('admin');
     } else {
+      setShowLoginPassword(false);
       setView('login');
     }
   };
@@ -453,7 +458,8 @@ export default function Home() {
   }
 
   return (
-    <div className="app-shell flex min-h-screen flex-col">
+    <div className="app-shell account-shell flex min-h-screen flex-col">
+      <Head><title>{view === 'login' ? t('login.title') : t('admin.title')} · {t('appName')}</title></Head>
       <div className="ambient-orb ambient-orb-left" aria-hidden="true" />
       <div className="ambient-orb ambient-orb-right" aria-hidden="true" />
 
@@ -474,7 +480,7 @@ export default function Home() {
             </span>
           </button>
 
-          <nav className="flex items-center gap-1.5 sm:gap-2">
+          <nav className="flex flex-shrink-0 items-center gap-1.5 sm:gap-2">
             <button
               onClick={toggleLanguage}
               className="icon-button flex h-9 items-center gap-1.5 rounded-xl px-2.5 text-xs font-bold uppercase"
@@ -484,8 +490,8 @@ export default function Home() {
               <span>{language}</span>
             </button>
 
-            <button onClick={() => setView('dashboard')} className="secondary-button flex h-9 items-center gap-2 rounded-xl px-3 text-sm font-semibold">
-              <LayoutDashboard size={16} /><span>{t('dashboard.dashboardLink')}</span>
+            <button onClick={() => setView('dashboard')} aria-label={t('dashboard.dashboardLink')} title={t('dashboard.dashboardLink')} className="secondary-button flex h-9 items-center gap-2 rounded-xl px-3 text-sm font-semibold">
+              <LayoutDashboard size={16} /><span className="hidden sm:inline">{t('dashboard.dashboardLink')}</span>
             </button>
           </nav>
         </div>
@@ -495,14 +501,20 @@ export default function Home() {
         <div className="mx-auto w-full max-w-[1400px] px-4 py-7 sm:px-6 sm:py-10 lg:px-8">
 
           {view === 'login' && (
-            <div className="grid min-h-[calc(100vh-11rem)] animate-fade-in items-stretch gap-5 lg:grid-cols-[1.05fr_0.95fr]">
-              <section className="hero-panel hidden min-h-[36rem] flex-col justify-between rounded-[1.75rem] p-8 lg:flex lg:p-10">
+            <div className="login-layout grid min-h-[calc(100vh-11rem)] animate-fade-in items-stretch gap-5 lg:grid-cols-[1.05fr_0.95fr]">
+              <section className="hero-panel login-intro hidden flex-col justify-between p-8 lg:flex lg:p-10">
                 <div className="relative z-10">
                   <span className="eyebrow"><ShieldCheck size={14} /> {t('login.securityCheck')}</span>
                   <h2 className="mt-5 max-w-lg text-4xl font-semibold tracking-[-0.045em] text-[var(--text-primary)]">
                     {t('login.title')}
                   </h2>
                   <p className="mt-4 max-w-md text-base leading-7 text-[var(--text-secondary)]">{t('login.subtitle')}</p>
+                </div>
+                <div className="login-sculpture" aria-hidden="true">
+                  <div className="login-glass-tile login-glass-tile-back" />
+                  <div className="login-glass-tile"><ShieldCheck size={62} strokeWidth={1.2} /></div>
+                  <span className="login-floating-chip login-floating-chip-left"><Braces size={15} /> {t('dashboard.workspace')}</span>
+                  <span className="login-floating-chip login-floating-chip-right"><CheckCircle2 size={15} /> {t('login.securityCheck')}</span>
                 </div>
                 <div className="relative z-10 grid gap-3 sm:grid-cols-2">
                   <div className="metric-card rounded-2xl p-4">
@@ -519,11 +531,9 @@ export default function Home() {
               </section>
 
               <div className="flex items-center justify-center py-4">
-                <div className="modal-panel relative w-full max-w-md overflow-hidden rounded-[1.75rem] p-6 sm:p-8">
-                  <div className="absolute inset-x-0 top-0 h-1 bg-[var(--accent-gradient)]" />
-
+                <div className="modal-panel login-card relative w-full max-w-md">
                   <div className="mb-7">
-                    <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-2xl bg-[var(--accent-soft)] text-[var(--accent-color)] ring-1 ring-[var(--glass-border)]">
+                    <div className="login-mark mb-5 flex h-14 w-14 items-center justify-center rounded-[1.2rem]">
                       <LogIn size={21} />
                     </div>
                     <h2 className="text-2xl font-semibold tracking-[-0.035em] text-[var(--text-primary)]">{t('login.title')}</h2>
@@ -532,7 +542,7 @@ export default function Home() {
 
                   <form onSubmit={handleLogin} className="space-y-4">
                     {loginError && (
-                      <div className="rounded-xl border border-[var(--status-offline-border)] bg-[var(--status-offline-bg)] p-3 text-sm text-[var(--status-offline-text)]">
+                      <div role="alert" className="rounded-xl border border-[var(--status-offline-border)] bg-[var(--status-offline-bg)] p-3 text-sm text-[var(--status-offline-text)]">
                         {loginError}
                       </div>
                     )}
@@ -553,16 +563,28 @@ export default function Home() {
 
                     <div>
                       <label htmlFor="login-password" className="mb-1.5 block text-sm font-semibold text-[var(--text-secondary)]">{t('login.password')}</label>
-                      <input
-                        type="password"
-                        id="login-password"
-                        autoComplete="current-password"
-                        value={loginPassword}
-                        onChange={(e) => setLoginPassword(e.target.value)}
-                        className="field-control rounded-xl px-4 py-3 text-sm"
-                        placeholder="••••••••"
-                        disabled={isLoggingIn}
-                      />
+                      <div className="relative">
+                        <input
+                          type={showLoginPassword ? 'text' : 'password'}
+                          id="login-password"
+                          autoComplete="current-password"
+                          value={loginPassword}
+                          onChange={(e) => setLoginPassword(e.target.value)}
+                          className="field-control rounded-xl py-3 pl-4 pr-14 text-sm"
+                          placeholder="••••••••"
+                          disabled={isLoggingIn}
+                        />
+                        <button
+                          type="button"
+                          className="password-toggle"
+                          aria-label={language === 'zh' ? (showLoginPassword ? '隐藏密码' : '显示密码') : (showLoginPassword ? 'Hide password' : 'Show password')}
+                          aria-pressed={showLoginPassword}
+                          onClick={() => setShowLoginPassword(value => !value)}
+                          disabled={isLoggingIn}
+                        >
+                          {showLoginPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                        </button>
+                      </div>
                     </div>
 
                     <div className="pt-1">

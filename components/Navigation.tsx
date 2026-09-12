@@ -17,6 +17,7 @@ import {
   History,
   Languages,
   LayoutList,
+  Layers2,
   Menu,
   Plus,
   PanelLeftClose,
@@ -27,6 +28,7 @@ import {
   Settings2,
   Sparkles,
   Star,
+  UserRound,
   X,
 } from 'lucide-react';
 import { Category, ClientConnectivityMap, Website } from '../types';
@@ -75,9 +77,16 @@ export default function Navigation({
   const [showStatus, setShowStatus] = useState(false);
   const [ready, setReady] = useState(false);
   const [storageError, setStorageError] = useState(false);
+  const [softGlass, setSoftGlass] = useState(false);
+  const [favoriteNotice, setFavoriteNotice] = useState<{ id: string; title: string; added: boolean } | null>(null);
+  const [noticePaused, setNoticePaused] = useState(false);
+  const notificationRef = useRef<HTMLDivElement>(null);
+  const favoriteTriggerRef = useRef<HTMLElement | null>(null);
   const sidebarRef = useRef<HTMLElement>(null);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
+  const categoryTabsRef = useRef<HTMLDivElement>(null);
+  const categoryIndicatorRef = useRef<HTMLSpanElement>(null);
 
   useEffect(() => {
     try {
@@ -92,6 +101,7 @@ export default function Navigation({
       setRecent(ids(saved.recent).slice(0, 12));
       if (saved.layout === 'list') setLayout('list');
       setSidebarCollapsed(saved.sidebarCollapsed === true);
+      setSoftGlass(saved.softGlass === true);
     } catch {
       /* Missing or invalid preferences fall back to defaults. */
     }
@@ -104,14 +114,37 @@ export default function Navigation({
     try {
       localStorage.setItem(
         PREFERENCES_KEY,
-        JSON.stringify({ favorites, recent, layout, sidebarCollapsed }),
+        JSON.stringify({ favorites, recent, layout, sidebarCollapsed, softGlass }),
       );
     } catch {
       // Surface persistence failures so users know their preferences are session-only.
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setStorageError(true);
     }
-  }, [favorites, recent, layout, sidebarCollapsed, ready]);
+  }, [favorites, recent, layout, sidebarCollapsed, softGlass, ready]);
+
+  useEffect(() => {
+    if (!favoriteNotice || noticePaused) return;
+    const timer = window.setTimeout(() => setFavoriteNotice(null), 4500);
+    return () => window.clearTimeout(timer);
+  }, [favoriteNotice, noticePaused]);
+
+  useEffect(() => {
+    const tabs = categoryTabsRef.current;
+    const indicator = categoryIndicatorRef.current;
+    const selected = tabs?.querySelector<HTMLButtonElement>('button.selected');
+    if (!tabs || !indicator || !selected) return;
+    const positionIndicator = () => {
+      indicator.style.width = `${selected.offsetWidth}px`;
+      indicator.style.transform = `translateX(${selected.offsetLeft}px)`;
+      indicator.style.opacity = '1';
+    };
+    positionIndicator();
+    const observer = new ResizeObserver(positionIndicator);
+    observer.observe(tabs);
+    observer.observe(selected);
+    return () => observer.disconnect();
+  }, [category, categories, language, sidebarCollapsed]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -142,7 +175,7 @@ export default function Navigation({
     const menuButton = menuButtonRef.current;
     const overflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
-    sidebarRef.current?.querySelector('button')?.focus();
+    const focusFrame = window.requestAnimationFrame(() => sidebarRef.current?.querySelector('button')?.focus());
     const trapFocus = (event: KeyboardEvent) => {
       if (event.key !== 'Tab') return;
       const buttons =
@@ -150,7 +183,10 @@ export default function Navigation({
       if (!buttons?.length) return;
       const first = buttons[0];
       const last = buttons[buttons.length - 1];
-      if (event.shiftKey && document.activeElement === first) {
+      if (!sidebarRef.current?.contains(document.activeElement)) {
+        event.preventDefault();
+        first.focus();
+      } else if (event.shiftKey && document.activeElement === first) {
         event.preventDefault();
         last.focus();
       } else if (!event.shiftKey && document.activeElement === last) {
@@ -161,6 +197,7 @@ export default function Navigation({
     document.addEventListener('keydown', trapFocus);
     return () => {
       document.body.style.overflow = overflow;
+      window.cancelAnimationFrame(focusFrame);
       document.removeEventListener('keydown', trapFocus);
       menuButton?.focus();
     };
@@ -185,10 +222,23 @@ export default function Navigation({
     setCollection('all');
     setMenuOpen(false);
   };
-  const toggleFavorite = (id: string) =>
+  const toggleFavorite = (id: string) => {
+    favoriteTriggerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    setNoticePaused(false);
+    setFavoriteNotice({ id, title: websites.find(site => site.id === id)?.title || '', added: !favorites.includes(id) });
     setFavorites((prev) =>
       prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id],
     );
+  };
+  const dismissFavoriteNotice = () => {
+    const restoreFocus = notificationRef.current?.contains(document.activeElement);
+    setFavoriteNotice(null);
+    setNoticePaused(false);
+    if (restoreFocus) window.requestAnimationFrame(() => {
+      const trigger = favoriteTriggerRef.current;
+      (trigger?.isConnected && trigger !== document.body ? trigger : searchRef.current)?.focus({ preventScroll: true });
+    });
+  };
   const recordVisit = (id: string) =>
     setRecent((prev) =>
       [id, ...prev.filter((item) => item !== id)].slice(0, 12),
@@ -254,7 +304,7 @@ export default function Navigation({
     .slice(0, 4);
 
   return (
-    <div className={`navigator ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
+    <div className={`navigator ${sidebarCollapsed ? 'sidebar-collapsed' : ''} ${softGlass ? 'glass-soft' : ''}`}>
       <Head>
         <title>
           {copy(
@@ -285,8 +335,13 @@ export default function Navigation({
         ref={sidebarRef}
         id="workspace-sidebar"
         className={`workspace-sidebar ${menuOpen ? 'is-open' : ''}`}
+        role={menuOpen ? 'dialog' : undefined}
+        aria-modal={menuOpen || undefined}
         aria-label={copy('网站导航', 'Website navigation')}
       >
+        <button type="button" className="mobile-sidebar-close quiet-button" onClick={() => setMenuOpen(false)} aria-label={copy('关闭导航', 'Close navigation')}>
+          <X size={18} aria-hidden="true" />
+        </button>
         <button
           className="workspace-brand"
           aria-label={t('appName')}
@@ -305,7 +360,7 @@ export default function Navigation({
           </span>
         </button>
         <div className="sidebar-section-label">
-          WORKSPACE <span>01</span>
+          {copy('我的空间', 'WORKSPACE')} <span>01</span>
         </div>
         <nav className="sidebar-nav" aria-label={copy('个人空间', 'Workspace')}>
           <button
@@ -383,7 +438,7 @@ export default function Navigation({
         </nav>
         <div className="sidebar-bottom">
           <div className="sidebar-note">
-            <span className="note-mark">✳</span>
+            <Sparkles className="note-mark" size={24} aria-hidden="true" />
             <p>
               {copy('让好网站，', 'Good places.')}
               <br />
@@ -407,7 +462,7 @@ export default function Navigation({
             <ArrowUpRight size={15} />
           </button>
           <p className="sidebar-version">
-            CURATED BY YOU <span>↗</span>
+            CURATED BY YOU <ArrowUpRight size={12} aria-hidden="true" />
           </p>
         </div>
       </aside>
@@ -457,6 +512,17 @@ export default function Navigation({
               {copy('保持好奇，持续探索', 'STAY CURIOUS')}
             </span>
             <button
+              type="button"
+              className={`quiet-button material-button ${softGlass ? 'is-active' : ''}`}
+              onClick={() => setSoftGlass(value => !value)}
+              aria-label={copy('降低透明度', 'Reduce transparency')}
+              aria-pressed={softGlass}
+              title={softGlass ? copy('切换为清透玻璃', 'Use clear glass') : copy('切换为柔和玻璃', 'Use soft glass')}
+            >
+              <Layers2 size={17} aria-hidden="true" />
+              <span>{softGlass ? copy('柔和', 'Soft') : copy('清透', 'Clear')}</span>
+            </button>
+            <button
               className="quiet-button language-button"
               onClick={() => setLanguage(zh ? 'en' : 'zh')}
               aria-label={zh ? 'Switch to English' : '切换到中文'}
@@ -469,11 +535,16 @@ export default function Navigation({
               onClick={onManage}
               aria-label={copy('管理员入口', 'Administrator login')}
             >
-              V<span />
+              <UserRound size={17} aria-hidden="true" />
             </button>
           </div>
         </header>
         <main id="nav-content" className="workspace-content" tabIndex={-1}>
+          <section className="workspace-welcome" aria-labelledby="workspace-title">
+            <div className="welcome-eyebrow"><span /> {copy('为你的每一次出发', 'A SPACE FOR YOUR NEXT DISCOVERY')}</div>
+            <h1 id="workspace-title">{copy('好去处，', 'Good places.')}<span>{copy('一触即达。', 'Within reach.')}</span></h1>
+            <p>{copy('常用的工具，偶遇的灵感。把喜欢的互联网，收进自己的空间。', 'Your everyday tools and unexpected inspiration. A little space for the internet you love.')}</p>
+          </section>
           <section
             className="network-panel"
             aria-label={copy('连通性概览', 'Connectivity overview')}
@@ -542,7 +613,7 @@ export default function Navigation({
                 </span>
               </button>
             </div>
-            {showStatus && (
+            <div className={`network-disclosure ${showStatus ? 'is-open' : ''}`} inert={!showStatus || undefined} aria-hidden={!showStatus}>
               <div id="network-details" className="network-details">
                 <p>{t('dashboard.clientProbeNotice')}</p>
                 <div>
@@ -566,7 +637,7 @@ export default function Navigation({
                   </label>
                 </div>
               </div>
-            )}
+            </div>
           </section>
 
           <section
@@ -659,10 +730,10 @@ export default function Navigation({
             <div className="library-heading">
               <div>
                 <div className="section-kicker">YOUR HANDPICKED INTERNET</div>
-                <h1>
+                <h2>
                   {title}
                   <span>{filtered.length.toString().padStart(2, '0')}</span>
-                </h1>
+                </h2>
               </div>
               <button className="add-site-button" onClick={onManage}>
                 <Plus size={16} />
@@ -671,9 +742,11 @@ export default function Navigation({
             </div>
             <div className="library-toolbar">
               <div
+                ref={categoryTabsRef}
                 className="category-tabs"
                 aria-label={copy('筛选分类', 'Filter categories')}
               >
+                <span ref={categoryIndicatorRef} className="category-indicator" aria-hidden="true" />
                 <button
                   onClick={() => setCategory('all')}
                   className={category === 'all' ? 'selected' : ''}
@@ -780,6 +853,7 @@ export default function Navigation({
               </div>
             ) : filtered.length > 0 ? (
               <div
+                key={`${layout}-${collection}-${category}`}
                 className={`website-grid ${layout === 'list' ? 'website-list' : ''}`}
               >
                 {filtered.map((site) => (
@@ -897,6 +971,31 @@ export default function Navigation({
             </span>
           </footer>
         </main>
+      </div>
+      <div
+        ref={notificationRef}
+        className="workspace-notifications"
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+        onPointerEnter={() => setNoticePaused(true)}
+        onPointerLeave={() => setNoticePaused(!!notificationRef.current?.contains(document.activeElement))}
+        onFocus={() => setNoticePaused(true)}
+        onBlur={event => {
+          if (!event.currentTarget.contains(event.relatedTarget) && !event.currentTarget.matches(':hover')) setNoticePaused(false);
+        }}
+      >
+        {favoriteNotice && (
+          <div className="favorite-toast" key={`${favoriteNotice.id}-${favoriteNotice.added}`}>
+            <Star size={17} fill={favoriteNotice.added ? 'currentColor' : 'none'} aria-hidden="true" />
+            <span>{favoriteNotice.title} · {favoriteNotice.added ? copy('已加入收藏', 'Added to favorites') : copy('已取消收藏', 'Removed from favorites')}</span>
+            <button type="button" onClick={() => {
+              setFavorites(prev => favoriteNotice.added ? prev.filter(id => id !== favoriteNotice.id) : [...new Set([...prev, favoriteNotice.id])]);
+              dismissFavoriteNotice();
+            }}>{copy('撤销', 'Undo')}</button>
+            <button type="button" aria-label={copy('关闭提示', 'Dismiss notification')} onClick={dismissFavoriteNotice}><X size={15} /></button>
+          </div>
+        )}
       </div>
     </div>
   );

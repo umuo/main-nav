@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Download,
   Edit2,
@@ -44,7 +45,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onRunServerChecks,
   onLogout
 }) => {
-  const { t } = useTranslation();
+  const { t, language } = useTranslation();
   const { theme, setTheme } = useTheme();
 
   // Website Modal State
@@ -66,6 +67,45 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [isCheckingServers, setIsCheckingServers] = useState(false);
   const [serverCheckMessage, setServerCheckMessage] = useState('');
   const [serverCheckFailed, setServerCheckFailed] = useState(false);
+  const dialogRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!isModalOpen && !isCategoryManagerOpen) return;
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const previousOverflow = document.body.style.overflow;
+    const appRoot = document.getElementById('__next');
+    const previousInert = appRoot?.inert || false;
+    if (appRoot) appRoot.inert = true;
+    document.body.style.overflow = 'hidden';
+    const frame = requestAnimationFrame(() => dialogRef.current?.querySelector<HTMLInputElement>('input')?.focus());
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setIsModalOpen(false);
+        setIsCategoryManagerOpen(false);
+      }
+      if (event.key !== 'Tab') return;
+      const controls = dialogRef.current?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), textarea:not(:disabled), select:not(:disabled), [tabindex="0"]');
+      if (!controls?.length) return;
+      const first = controls[0];
+      const last = controls[controls.length - 1];
+      if (event.shiftKey && (document.activeElement === first || !dialogRef.current?.contains(document.activeElement))) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && (document.activeElement === last || !dialogRef.current?.contains(document.activeElement))) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      cancelAnimationFrame(frame);
+      document.body.style.overflow = previousOverflow;
+      if (appRoot) appRoot.inert = previousInert;
+      document.removeEventListener('keydown', handleKeyDown);
+      previousFocus?.focus();
+    };
+  }, [isModalOpen, isCategoryManagerOpen]);
 
   const handleRunServerChecks = async () => {
     setIsCheckingServers(true);
@@ -259,7 +299,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const onlineCount = websites.filter(site => site.status === 'online').length;
 
   return (
-    <div className="space-y-5">
+    <div className="admin-dashboard space-y-5">
       <section className="hero-panel rounded-[1.75rem] p-5 sm:p-7">
         <div className="relative z-10 flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
           <div>
@@ -285,7 +325,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </div>
       </section>
 
-      <section className="control-surface flex flex-col gap-5 rounded-2xl p-4 lg:flex-row lg:items-center lg:justify-between">
+      <section className="control-surface admin-appearance flex flex-col gap-5 rounded-2xl p-5 lg:flex-row lg:items-center lg:justify-between">
         <div className="min-w-0">
           <h3 className="flex items-center gap-2 text-sm font-semibold text-[var(--text-primary)]">
             <Palette size={16} className="text-[var(--accent-color)]" />
@@ -297,7 +337,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <button
                 key={themeOption.id}
                 onClick={() => setTheme(themeOption.id)}
-                className={`flex flex-none items-center gap-2 rounded-xl border px-2 py-1.5 text-xs font-semibold transition-all ${
+                className={`admin-theme-option flex flex-none items-center gap-2 rounded-xl border px-2 py-1.5 text-xs font-semibold ${
                   theme === themeOption.id
                     ? 'border-[var(--accent-color)] bg-[var(--accent-soft)] text-[var(--accent-color)]'
                     : 'border-[var(--glass-border)] bg-[var(--surface-muted)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
@@ -356,11 +396,22 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
           <Search className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--text-tertiary)]" size={16} />
           <input
             type="text"
+            aria-label={t('admin.searchPlaceholder')}
             placeholder={t('admin.searchPlaceholder')}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="field-control h-11 rounded-xl py-2 pl-10 pr-4 text-sm"
+            className="field-control h-11 rounded-2xl py-2 pl-10 pr-11 text-sm"
           />
+          {searchTerm && (
+            <button
+              type="button"
+              onClick={() => setSearchTerm('')}
+              className="password-toggle !inset-y-1 !right-1 !w-9"
+              aria-label={language === 'zh' ? '清除搜索' : 'Clear search'}
+            >
+              <X size={16} />
+            </button>
+          )}
         </div>
         <div className="flex flex-col gap-2 sm:items-end">
           <div className="flex flex-col gap-2 sm:flex-row">
@@ -393,7 +444,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       </div>
 
       {/* Website Table */}
-      <div className="glass-panel overflow-hidden rounded-2xl">
+      <div className="glass-panel admin-table overflow-hidden rounded-2xl">
         <div className="overflow-x-auto">
           <table className="w-full text-left">
             <thead>
@@ -451,7 +502,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       </button>
                       <button
                         onClick={() => onDelete(site.id)}
-                        className="flex h-9 w-9 items-center justify-center rounded-xl border border-transparent text-[var(--text-secondary)] transition-colors hover:border-[var(--status-offline-border)] hover:bg-[var(--status-offline-bg)] hover:text-[var(--status-offline-text)]"
+                        className="delete-site-button flex h-9 w-9 items-center justify-center rounded-xl border border-transparent text-[var(--text-secondary)] transition-colors hover:border-[var(--status-offline-border)] hover:bg-[var(--status-offline-bg)] hover:text-[var(--status-offline-text)]"
                         title={t('admin.delete')}
                       >
                         <Trash2 size={15} />
@@ -474,22 +525,24 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
       {/* Website Edit/Add Modal */}
       {
-        isModalOpen && (
+        isModalOpen && createPortal(
           <div className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in">
-            <div className="modal-panel relative w-full max-w-lg rounded-[1.5rem] p-6 animate-slide-up sm:p-7">
+            <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="website-modal-title" className="modal-panel admin-modal relative w-full max-w-lg rounded-[1.5rem] p-6 animate-slide-up sm:p-7">
               <button
+                aria-label={t('admin.modal.cancel')}
                 onClick={() => setIsModalOpen(false)}
                 className="icon-button absolute right-4 top-4 flex h-9 w-9 items-center justify-center rounded-xl"
               >
                 <X size={17} />
               </button>
-              <h3 className="mb-6 pr-12 text-xl font-semibold tracking-[-0.025em] text-[var(--text-primary)]">
+              <h3 id="website-modal-title" className="mb-6 pr-12 text-xl font-semibold tracking-[-0.025em] text-[var(--text-primary)]">
                 {editingId ? t('admin.modal.editTitle') : t('admin.modal.addTitle')}
               </h3>
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div>
-                  <label className="mb-1.5 block text-sm font-semibold text-[var(--text-secondary)]">{t('admin.modal.titleLabel')}</label>
+                  <label htmlFor="website-title" className="mb-1.5 block text-sm font-semibold text-[var(--text-secondary)]">{t('admin.modal.titleLabel')}</label>
                   <input
+                    id="website-title"
                     type="text"
                     required
                     value={title}
@@ -499,8 +552,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   />
                 </div>
                 <div>
-                  <label className="mb-1.5 block text-sm font-semibold text-[var(--text-secondary)]">{t('admin.modal.urlLabel')}</label>
+                  <label htmlFor="website-url" className="mb-1.5 block text-sm font-semibold text-[var(--text-secondary)]">{t('admin.modal.urlLabel')}</label>
                   <input
+                    id="website-url"
                     type="text"
                     required
                     value={url}
@@ -510,8 +564,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   />
                 </div>
                 <div>
-                  <label className="mb-1.5 block text-sm font-semibold text-[var(--text-secondary)]">{t('admin.modal.categoryLabel')}</label>
+                  <label htmlFor="website-category" className="mb-1.5 block text-sm font-semibold text-[var(--text-secondary)]">{t('admin.modal.categoryLabel')}</label>
                   <select
+                    id="website-category"
                     value={selectedCategoryId}
                     onChange={(e) => setSelectedCategoryId(e.target.value)}
                     className="field-control rounded-xl px-4 py-2.5 text-sm [&>option]:bg-[var(--page-bg)]"
@@ -524,8 +579,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </select>
                 </div>
                 <div>
-                  <label className="mb-1.5 block text-sm font-semibold text-[var(--text-secondary)]">{t('admin.modal.descLabel')}</label>
+                  <label htmlFor="website-description" className="mb-1.5 block text-sm font-semibold text-[var(--text-secondary)]">{t('admin.modal.descLabel')}</label>
                   <textarea
+                    id="website-description"
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
                     className="field-control h-24 resize-none rounded-xl px-4 py-2.5 text-sm"
@@ -536,7 +592,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <button
                     type="button"
                     onClick={() => setIsModalOpen(false)}
-                    className="px-4 py-2 text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
+                    className="secondary-button rounded-xl px-4 py-2 text-sm font-semibold"
                   >
                     {t('admin.modal.cancel')}
                   </button>
@@ -550,26 +606,29 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
               </form>
             </div>
-          </div>
+          </div>,
+          document.body
         )
       }
 
       {/* Category Manager Modal */}
       {
-        isCategoryManagerOpen && (
+        isCategoryManagerOpen && createPortal(
           <div className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in">
-            <div className="modal-panel relative w-full max-w-md rounded-[1.5rem] p-6 animate-slide-up sm:p-7">
+            <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="category-modal-title" className="modal-panel admin-modal relative w-full max-w-md rounded-[1.5rem] p-6 animate-slide-up sm:p-7">
               <button
+                aria-label={t('admin.modal.cancel')}
                 onClick={() => setIsCategoryManagerOpen(false)}
                 className="icon-button absolute right-4 top-4 flex h-9 w-9 items-center justify-center rounded-xl"
               >
                 <X size={17} />
               </button>
-              <h3 className="mb-6 pr-12 text-lg font-semibold tracking-[-0.025em] text-[var(--text-primary)]">{t('admin.categoryModal.title')}</h3>
+              <h3 id="category-modal-title" className="mb-6 pr-12 text-lg font-semibold tracking-[-0.025em] text-[var(--text-primary)]">{t('admin.categoryModal.title')}</h3>
 
               <form onSubmit={handleCategorySubmit} className="mb-6 flex gap-2">
                 <input
                   type="text"
+                  aria-label={t('admin.categoryModal.namePlaceholder')}
                   value={categoryName}
                   onChange={(e) => setCategoryName(e.target.value)}
                   placeholder={t('admin.categoryModal.namePlaceholder')}
@@ -579,12 +638,14 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <>
                     <button
                       type="submit"
+                      aria-label={t('admin.modal.save')}
                       className="primary-button flex h-10 w-10 items-center justify-center rounded-xl"
                     >
                       <Save size={20} />
                     </button>
                     <button
                       type="button"
+                      aria-label={t('admin.modal.cancel')}
                       onClick={cancelEditCategory}
                       className="icon-button flex h-10 w-10 items-center justify-center rounded-xl"
                     >
@@ -594,6 +655,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 ) : (
                   <button
                     type="submit"
+                    aria-label={t('admin.modal.create')}
                     disabled={!categoryName.trim()}
                     className="primary-button flex h-10 w-10 items-center justify-center rounded-xl disabled:opacity-50"
                   >
@@ -609,12 +671,14 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     {cat.id !== 'default' && (
                       <div className="flex gap-1 opacity-70 transition-opacity group-hover:opacity-100">
                         <button
+                          aria-label={`${t('admin.edit')} ${cat.name}`}
                           onClick={() => startEditCategory(cat)}
                           className="p-1.5 text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-white/10 rounded-lg transition-colors"
                         >
                           <Edit2 size={14} />
                         </button>
                         <button
+                          aria-label={`${t('admin.delete')} ${cat.name}`}
                           onClick={() => onDeleteCategory(cat.id)}
                           className="p-1.5 text-[var(--text-secondary)] hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
                         >
@@ -626,7 +690,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 ))}
               </div>
             </div>
-          </div>
+          </div>,
+          document.body
         )
       }
     </div >
